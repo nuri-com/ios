@@ -40,8 +40,12 @@ struct ScenarioPickerState: Equatable {
                 ScenarioItem(id: "cardAutofillForm", title: Localizations.cardAutofillForm, route: .cardAutofillForm),
                 ScenarioItem(id: "registerPasskey", title: Localizations.registerPasskey, route: .registerPasskey),
                 ScenarioItem(id: "usePasskey", title: Localizations.usePasskey, route: .usePasskey),
-                ScenarioItem(id: "fileShare", title: Localizations.fileShare, route: .fileShare),
             ])
+        }
+        if #available(iOS 16.0, *) {
+            items.append(
+                ScenarioItem(id: "fileShare", title: Localizations.fileShare, route: .fileShare),
+            )
         }
         scenarios = items
     }
