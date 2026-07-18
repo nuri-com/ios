@@ -204,11 +204,20 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
             ),
         ]
 
-        await assertAsyncThrows(error: ImportCiphersRepositoryError.blobCapableAccountRequired) {
-            _ = try await self.subject.importCiphers(
-                credentialImportToken: UUID(uuidString: "e8f3b381-aac2-4379-87fe-14fac61079ec")!,
-                onProgress: { _ in },
-            )
+        for opaqueCipherData in [nil, ""] as [String?] {
+            clientService.mockVault.clientCiphers.encryptClosure = { _ in
+                EncryptionContext(
+                    encryptedFor: "synthetic-user-id",
+                    cipher: .fixture(data: opaqueCipherData),
+                )
+            }
+
+            await assertAsyncThrows(error: ImportCiphersRepositoryError.blobCapableAccountRequired) {
+                _ = try await self.subject.importCiphers(
+                    credentialImportToken: UUID(uuidString: "e8f3b381-aac2-4379-87fe-14fac61079ec")!,
+                    onProgress: { _ in },
+                )
+            }
         }
 
         XCTAssertFalse(importCiphersService.importCiphersCalled)

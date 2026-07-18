@@ -110,7 +110,7 @@ extension DefaultImportCiphersRepository: ImportCiphersRepository {
                 let cipherView = try await ciphersClient.decrypt(cipher: importedCipher)
                 let encryptionContext = try await ciphersClient.encrypt(cipherView: cipherView)
 
-                guard !containsPortablePasskey || encryptionContext.cipher.data != nil else {
+                guard !containsPortablePasskey || encryptionContext.cipher.data?.isEmpty == false else {
                     throw ImportCiphersRepositoryError.blobCapableAccountRequired
                 }
 
