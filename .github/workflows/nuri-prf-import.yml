@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/nuri-prf-import.yml"
+      - "Bitwarden.xcworkspace/xcshareddata/swiftpm/Package.resolved"
       - "AuthenticatorShared/UI/Vault/PreviewContent/BitwardenSdk+VaultFixtures.swift"
       - "BitwardenKit/Core/Vault/Services/Mocks/BitwardenSdk+VaultMocking.swift"
       - "BitwardenShared/Core/Tools/Repositories/ImportCiphersRepository*"
@@ -17,13 +18,14 @@ on:
       - "BitwardenShared/Core/Vault/Services/TestHelpers/CXFPasskeyPRF+Fixtures.swift"
       - "BitwardenShared/UI/Tools/ImportCXF/ImportCXF/ImportCXFProcessor*"
       - "BitwardenShared/UI/Vault/PreviewContent/BitwardenSdk+VaultFixtures.swift"
+      - "project-common.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  NURI_SDK_REF: ac6eb96c40c06657d4625b37b3563d3adc184a80
+  NURI_SDK_REF: 3c0707d3dde398e388119b13e3bc471afe7ef432
 
 jobs:
   test-prf-import-boundary:
@@ -38,57 +40,25 @@ jobs:
           path: ios
           persist-credentials: false
 
-      - name: Check out pinned Nuri SDK
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          repository: nuri-com/sdk-internal
-          ref: ${{ env.NURI_SDK_REF }}
-          path: sdk-internal
-          persist-credentials: false
-
       - name: Select Xcode 26.5
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: "26.5"
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: 1.96.0
-
-      - name: Install Rust iOS targets
-        working-directory: sdk-internal
+      - name: Verify published SDK pin
+        working-directory: ios
         run: |
-          rustup target install aarch64-apple-ios-sim
-          rustup target install aarch64-apple-ios
-          rustup target install x86_64-apple-ios
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
-        with:
-          workspaces: sdk-internal -> target
-          key: nuri-sdk-swift-prf-import
-
-      - name: Build pinned Nuri Swift SDK
-        working-directory: sdk-internal/crates/bitwarden-uniffi/swift
-        env:
-          DEBUG_MODE: "true"
-        run: ./build.sh
-
-      - name: Verify local SDK import contract
-        run: |
-          test "$(git -C sdk-internal rev-parse HEAD)" = "$NURI_SDK_REF"
-          grep -q "extensionState" sdk-internal/crates/bitwarden-uniffi/swift/Sources/BitwardenSdk/BitwardenVault.swift
-          grep -q "path: ../sdk-internal/crates/bitwarden-uniffi/swift" ios/Configs/local-sdk.yml
+          grep -q "url: https://github.com/nuri-com/sdk-swift" project-common.yml
+          grep -q "revision: $NURI_SDK_REF" project-common.yml
+          test "$(jq -r '.pins[] | select(.identity == "sdk-swift") | .location' Bitwarden.xcworkspace/xcshareddata/swiftpm/Package.resolved)" = "https://github.com/nuri-com/sdk-swift"
+          test "$(jq -r '.pins[] | select(.identity == "sdk-swift") | .state.revision' Bitwarden.xcworkspace/xcshareddata/swiftpm/Package.resolved)" = "$NURI_SDK_REF"
 
       - name: Install iOS build tools
         working-directory: ios
         run: brew bundle
 
-      - name: Generate projects with the pinned local SDK
+      - name: Generate projects with the published SDK
         working-directory: ios
-        env:
-          LOCAL_SDK: "true"
         run: |
           ./Scripts/bootstrap.sh || ./Scripts/bootstrap.sh
 
