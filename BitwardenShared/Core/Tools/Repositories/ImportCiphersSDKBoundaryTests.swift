@@ -11,23 +11,7 @@ import XCTest
 final class ImportCiphersSDKBoundaryTests: XCTestCase {
     @MainActor
     func test_importCxf_preservesCompleteSyntheticPasskeyThroughBlobSync() async throws {
-        let client = Client(tokenProvider: SDKBoundaryTokenProvider(), settings: nil)
-        try await client.crypto().initializeUserCrypto(
-            req: InitUserCryptoRequest(
-                userId: "62dbb4dc-6e5f-4bc8-8b78-c946ebfe5308",
-                kdfParams: .pbkdf2(iterations: 100_000),
-                email: "synthetic@nuri.test",
-                accountCryptographicState: .v2(
-                    privateKey: syntheticV2PrivateKey(),
-                    signedPublicKey: nil,
-                    signingKey: syntheticV2SigningKey(),
-                    securityState: syntheticV2SecurityState(),
-                ),
-                method: .decryptedKey(decryptedUserKey: syntheticV2UserKey()),
-                upgradeToken: nil,
-            ),
-        )
-
+        let client = try await initializedClient()
         let fixtureAccount = CXFPasskeyPRFFixtures.account(for: .valid)
         let fixtureData = try JSONEncoder.cxfEncoder.encode(fixtureAccount)
         let fixturePayload = try XCTUnwrap(String(data: fixtureData, encoding: .utf8))
@@ -49,35 +33,8 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
         try assertBlobV1Shape(blobData)
         XCTAssertNil(blobCipher.login)
 
-        let importRequest = try ImportCiphersRequest(ciphers: [blobCipher])
-        let requestCipher = try XCTUnwrap(importRequest.body?.ciphers.first)
-        let encodedRequestCipher = try JSONEncoder().encode(requestCipher)
-        let requestJSON = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: encodedRequestCipher) as? [String: Any],
-        )
-        XCTAssertEqual(requestJSON["data"] as? String, blobData)
-        XCTAssertNil(requestJSON["login"])
-        let requestPayload = try XCTUnwrap(String(bytes: encodedRequestCipher, encoding: .utf8))
-        XCTAssertFalse(requestPayload.contains("extensionState"))
-
-        // Mirror the official server's blob response: the opaque data and cipher key are retained,
-        // while obsolete structured fields and name are absent or null.
-        let serverResponse = try serverResponse(blobData: blobData, blobKey: blobKey)
-
-        let cipherDataStore = MockCipherDataStore()
-        let apiService = APIService(client: MockHTTPClient())
-        let cipherService = DefaultCipherService(
-            cipherAPIService: apiService,
-            cipherDataStore: cipherDataStore,
-            fileAPIService: apiService,
-            stateService: MockStateService(),
-        )
-        try await cipherService.replaceCiphers(
-            [serverResponse],
-            userId: "62dbb4dc-6e5f-4bc8-8b78-c946ebfe5308",
-        )
-
-        let persistedCipher = try XCTUnwrap(cipherDataStore.replaceCiphersValue?.first)
+        try assertImportRequestPreservesBlob(blobCipher, expectedBlobData: blobData)
+        let persistedCipher = try await persistOfficialServerBlob(blobData: blobData, blobKey: blobKey)
         XCTAssertEqual(persistedCipher.data, blobData)
         XCTAssertNil(persistedCipher.login)
         XCTAssertNil(persistedCipher.name)
@@ -90,20 +47,7 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
         )
 
         // SDK export is used only as an oracle for the complete post-sync passkey.
-        let oraclePayload = try client.exporters().exportCxf(
-            account: BitwardenSdk.Account(
-                id: "62dbb4dc-6e5f-4bc8-8b78-c946ebfe5308",
-                email: "synthetic@nuri.test",
-                name: "Synthetic Nuri Test",
-            ),
-            ciphers: [persistedCipher],
-        )
-        let oracleAccount = try JSONDecoder.cxfDecoder.decode(
-            ASImportableAccount.self,
-            from: Data(oraclePayload.utf8),
-        )
-        let oraclePasskey = try XCTUnwrap(passkeys(in: oracleAccount).first)
-
+        let oraclePasskey = try exportedOraclePasskey(client: client, cipher: persistedCipher)
         XCTAssertTrue(
             CXFPasskeyPRFMatcher.passkeyMatches(
                 oraclePasskey,
@@ -111,6 +55,79 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
             ),
             "Complete passkey changed across real SDK import; credential material redacted",
         )
+    }
+
+    @MainActor
+    private func initializedClient() async throws -> Client {
+        let client = Client(tokenProvider: SDKBoundaryTokenProvider(), settings: nil)
+        try await client.crypto().initializeUserCrypto(
+            req: InitUserCryptoRequest(
+                userId: "62dbb4dc-6e5f-4bc8-8b78-c946ebfe5308",
+                kdfParams: .pbkdf2(iterations: 100_000),
+                email: "synthetic@nuri.test",
+                accountCryptographicState: .v2(
+                    privateKey: syntheticV2PrivateKey(),
+                    signedPublicKey: nil,
+                    signingKey: syntheticV2SigningKey(),
+                    securityState: syntheticV2SecurityState(),
+                ),
+                method: .decryptedKey(decryptedUserKey: syntheticV2UserKey()),
+                upgradeToken: nil,
+            ),
+        )
+        return client
+    }
+
+    private func assertImportRequestPreservesBlob(
+        _ cipher: BitwardenSdk.Cipher,
+        expectedBlobData: String,
+    ) throws {
+        let importRequest = try ImportCiphersRequest(ciphers: [cipher])
+        let requestCipher = try XCTUnwrap(importRequest.body?.ciphers.first)
+        let encodedRequestCipher = try JSONEncoder().encode(requestCipher)
+        let requestJSON = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encodedRequestCipher) as? [String: Any],
+        )
+        XCTAssertEqual(requestJSON["data"] as? String, expectedBlobData)
+        XCTAssertNil(requestJSON["login"])
+        let requestPayload = try XCTUnwrap(String(bytes: encodedRequestCipher, encoding: .utf8))
+        XCTAssertFalse(requestPayload.contains("extensionState"))
+    }
+
+    @MainActor
+    private func persistOfficialServerBlob(blobData: String, blobKey: String) async throws -> BitwardenSdk.Cipher {
+        let cipherDataStore = MockCipherDataStore()
+        let apiService = APIService(client: MockHTTPClient())
+        let cipherService = DefaultCipherService(
+            cipherAPIService: apiService,
+            cipherDataStore: cipherDataStore,
+            fileAPIService: apiService,
+            stateService: MockStateService(),
+        )
+        try await cipherService.replaceCiphers(
+            [serverResponse(blobData: blobData, blobKey: blobKey)],
+            userId: "62dbb4dc-6e5f-4bc8-8b78-c946ebfe5308",
+        )
+        return try XCTUnwrap(cipherDataStore.replaceCiphersValue?.first)
+    }
+
+    private func exportedOraclePasskey(
+        client: Client,
+        cipher: BitwardenSdk.Cipher,
+    ) throws -> ASImportableCredential.Passkey {
+        let oraclePayload = try client.exporters().exportCxf(
+            account: BitwardenSdk.Account(
+                id: "62dbb4dc-6e5f-4bc8-8b78-c946ebfe5308",
+                email: "synthetic@nuri.test",
+                name: "Synthetic Nuri Test",
+            ),
+            ciphers: [cipher],
+        )
+        let oracleAccount = try JSONDecoder.cxfDecoder.decode(
+            ASImportableAccount.self,
+            from: Data(oraclePayload.utf8),
+        )
+        return try XCTUnwrap(passkeys(in: oracleAccount).first)
     }
 
     private func assertBlobV1Shape(_ opaqueData: String) throws {
