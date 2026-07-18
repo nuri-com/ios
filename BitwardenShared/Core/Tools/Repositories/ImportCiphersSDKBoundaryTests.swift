@@ -25,7 +25,7 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
         )
 
         let sdkVaultClient: BitwardenSdk.VaultClient = client.vault()
-        let ciphersClient = sdkVaultClient.ciphers()
+        let ciphersClient: BitwardenSdk.CiphersClient = sdkVaultClient.ciphers()
         let importedView = try await ciphersClient.decrypt(cipher: importedCipher)
         let encryptedContext = try await ciphersClient.encrypt(cipherView: importedView)
         let blobCipher = encryptedContext.cipher
