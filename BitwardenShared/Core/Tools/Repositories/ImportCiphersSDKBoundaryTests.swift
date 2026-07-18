@@ -57,29 +57,12 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
         )
         XCTAssertEqual(requestJSON["data"] as? String, blobData)
         XCTAssertNil(requestJSON["login"])
-        XCTAssertFalse(String(decoding: encodedRequestCipher, as: UTF8.self).contains("extensionState"))
+        let requestPayload = try XCTUnwrap(String(bytes: encodedRequestCipher, encoding: .utf8))
+        XCTAssertFalse(requestPayload.contains("extensionState"))
 
         // Mirror the official server's blob response: the opaque data and cipher key are retained,
         // while obsolete structured fields and name are absent or null.
-        let serverResponseData = try JSONSerialization.data(withJSONObject: [
-            "collectionIds": [],
-            "creationDate": "2026-07-18T10:00:00Z",
-            "data": blobData,
-            "edit": true,
-            "favorite": false,
-            "id": "synthetic-composite-cipher",
-            "key": blobKey,
-            "name": NSNull(),
-            "organizationUseTotp": false,
-            "reprompt": 0,
-            "revisionDate": "2026-07-18T10:00:00Z",
-            "type": 1,
-            "viewPassword": true,
-        ])
-        let serverResponse = try CipherDetailsResponseModel.decoder.decode(
-            CipherDetailsResponseModel.self,
-            from: serverResponseData,
-        )
+        let serverResponse = try serverResponse(blobData: blobData, blobKey: blobKey)
 
         let cipherDataStore = MockCipherDataStore()
         let apiService = APIService(client: MockHTTPClient())
@@ -139,6 +122,28 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(blob["wrapped_cek"] as? String).isEmpty)
         let envelope = try XCTUnwrap(blob["envelope"] as? String)
         XCTAssertNotNil(Data(base64Encoded: envelope))
+    }
+
+    private func serverResponse(blobData: String, blobKey: String) throws -> CipherDetailsResponseModel {
+        let responseData = try JSONSerialization.data(withJSONObject: [
+            "collectionIds": [],
+            "creationDate": "2026-07-18T10:00:00Z",
+            "data": blobData,
+            "edit": true,
+            "favorite": false,
+            "id": "synthetic-composite-cipher",
+            "key": blobKey,
+            "name": NSNull(),
+            "organizationUseTotp": false,
+            "reprompt": 0,
+            "revisionDate": "2026-07-18T10:00:00Z",
+            "type": 1,
+            "viewPassword": true,
+        ])
+        return try CipherDetailsResponseModel.decoder.decode(
+            CipherDetailsResponseModel.self,
+            from: responseData,
+        )
     }
 
     private func passkeys(in account: ASImportableAccount) -> [ASImportableCredential.Passkey] {
