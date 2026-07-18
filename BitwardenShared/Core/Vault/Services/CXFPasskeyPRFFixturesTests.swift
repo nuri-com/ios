@@ -98,10 +98,11 @@ final class CXFPasskeyPRFFixturesTests: BitwardenTestCase {
     ) throws -> (ASImportableAccount, [ASImportableCredential.Passkey]) {
         let encoded = try JSONEncoder.cxfEncoder.encode(CXFPasskeyPRFFixtures.account(for: scenario))
         let account = try JSONDecoder.cxfDecoder.decode(ASImportableAccount.self, from: encoded)
-        let passkeys = account.items.flatMap { item in
-            item.credentials.compactMap { credential in
-                guard case let .passkey(passkey) = credential else { return nil }
-                return passkey
+        var passkeys = [ASImportableCredential.Passkey]()
+        for item in account.items {
+            for credential in item.credentials {
+                guard case let .passkey(passkey) = credential else { continue }
+                passkeys.append(passkey)
             }
         }
         return (account, passkeys)
