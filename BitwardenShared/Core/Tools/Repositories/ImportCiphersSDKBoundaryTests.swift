@@ -1,5 +1,5 @@
-import AuthenticationServices
 import BitwardenSdk
+import CryptoKit
 import Foundation
 import TestHelpers
 import XCTest
@@ -41,21 +41,11 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
         XCTAssertNil(persistedCipher.name)
 
         let syncedView = try await ciphersClient.decrypt(cipher: persistedCipher)
-        XCTAssertEqual(
+        XCTAssertNotNil(
             syncedView.login?.fido2Credentials?.first?.extensionState,
-            importedView.login?.fido2Credentials?.first?.extensionState,
             "Blob decrypt after sync mapping omitted extension state; value redacted",
         )
-
-        // SDK export is used only as an oracle for the complete post-sync passkey.
-        let oraclePasskey = try exportedOraclePasskey(client: client, cipher: persistedCipher)
-        XCTAssertTrue(
-            CXFPasskeyPRFMatcher.passkeyMatches(
-                oraclePasskey,
-                CXFPasskeyPRFFixtures.validPasskey,
-            ),
-            "Complete passkey changed across real SDK import; credential material redacted",
-        )
+        try await assertPortablePasskey(client: client, syncedView: syncedView)
     }
 
     @MainActor
@@ -112,23 +102,105 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
         return try XCTUnwrap(cipherDataStore.replaceCiphersValue?.first)
     }
 
-    private func exportedOraclePasskey(
+    private func assertPortablePasskey(
         client: Client,
-        cipher: BitwardenSdk.Cipher,
-    ) throws -> ASImportableCredential.Passkey {
-        let oraclePayload = try client.exporters().exportCxf(
-            account: BitwardenSdk.Account(
-                id: "62dbb4dc-6e5f-4bc8-8b78-c946ebfe5308",
-                email: "synthetic@nuri.test",
-                name: "Synthetic Nuri Test",
+        syncedView: BitwardenSdk.CipherView,
+    ) async throws {
+        let clientDataHash = Data(repeating: 0xA5, count: 32)
+        let authenticator = client.platform().fido2().authenticator(
+            userInterface: SDKBoundaryUserInterface(),
+            credentialStore: SDKBoundaryCredentialStore(cipher: syncedView),
+        )
+        let result = try await authenticator.getAssertion(
+            request: portablePasskeyRequest(clientDataHash: clientDataHash),
+        )
+
+        XCTAssertTrue(
+            CXFPasskeyPRFMatcher.secretDataMatches(result.credentialId, Data(0x00 ... 0x1F)),
+            "Credential ID changed across BlobV1 sync; value redacted",
+        )
+        XCTAssertTrue(
+            CXFPasskeyPRFMatcher.secretDataMatches(result.userHandle, Data(0x20 ... 0x2F)),
+            "User handle changed across BlobV1 sync; value redacted",
+        )
+        let prfResults = try XCTUnwrap(result.extensions.prf?.results)
+        XCTAssertTrue(
+            CXFPasskeyPRFMatcher.secretDataMatches(
+                prfResults.first,
+                decodeBase64URL("d8i94nf9OSyRco1LXP3wnUrRte5rCmguP3cURrj06go"),
             ),
-            ciphers: [cipher],
+            "First PRF output changed across BlobV1 sync; value redacted",
         )
-        let oracleAccount = try JSONDecoder.cxfDecoder.decode(
-            ASImportableAccount.self,
-            from: Data(oraclePayload.utf8),
+        XCTAssertTrue(
+            prfResults.second.map {
+                CXFPasskeyPRFMatcher.secretDataMatches(
+                    $0,
+                    decodeBase64URL("wxVdw-_rf1oJwrVQn-r6p4nqgf_dJgsfBDutwJNqdEY"),
+                )
+            } ?? false,
+            "Second PRF output changed across BlobV1 sync; value redacted",
         )
-        return try XCTUnwrap(passkeys(in: oracleAccount).first)
+        XCTAssertTrue(
+            authenticatorDataMatchesFixture(result.authenticatorData),
+            "Authenticator data lost RP, presence, verification, or counter semantics; value redacted",
+        )
+        XCTAssertTrue(
+            signatureIsValid(result, clientDataHash: clientDataHash),
+            "Imported private key did not produce the expected valid signature; value redacted",
+        )
+    }
+
+    private func portablePasskeyRequest(clientDataHash: Data) -> GetAssertionRequest {
+        GetAssertionRequest(
+            rpId: "nuri.com",
+            clientDataHash: clientDataHash,
+            allowList: nil,
+            options: Options(rk: true, uv: .discouraged),
+            extensions: GetAssertionExtensionsInput(
+                prf: GetAssertionPrfInput(
+                    eval: PrfInputValues(
+                        first: Data("nuri-prf-salt-v1".utf8),
+                        second: Data("test-salt-2".utf8),
+                        alreadyHashed: false,
+                    ),
+                    evalByCredential: nil,
+                ),
+            ),
+        )
+    }
+
+    private func authenticatorDataMatchesFixture(_ authenticatorData: Data) -> Bool {
+        guard authenticatorData.count >= 37 else { return false }
+        let expectedRPHash = Data(SHA256.hash(data: Data("nuri.com".utf8)))
+        let flags = authenticatorData[32]
+        let counter = authenticatorData[33 ..< 37]
+        return CXFPasskeyPRFMatcher.secretDataMatches(authenticatorData.prefix(32), expectedRPHash)
+            && flags & 0x01 != 0
+            && flags & 0x04 != 0
+            && counter.allSatisfy { $0 == 0 }
+    }
+
+    private func signatureIsValid(_ result: GetAssertionResult, clientDataHash: Data) -> Bool {
+        let encodedPublicKey = [
+            "BP6-odPIQNL1AE02LYE0vK7pO6e5slP8vcbeLsoukQOEwPXmGLbgiMYEfRDKUkiu-",
+            "VPgk3a11EYXjfpcZz5WgCU",
+        ].joined()
+        guard let publicKey = try? P256.Signing.PublicKey(
+            x963Representation: decodeBase64URL(encodedPublicKey),
+        ),
+            let signature = try? P256.Signing.ECDSASignature(derRepresentation: result.signature)
+        else {
+            return false
+        }
+        return publicKey.isValidSignature(signature, for: result.authenticatorData + clientDataHash)
+    }
+
+    private func decodeBase64URL(_ value: String) -> Data {
+        var base64 = value
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        base64.append(String(repeating: "=", count: (4 - base64.count % 4) % 4))
+        return Data(base64Encoded: base64) ?? Data()
     }
 
     private func assertBlobV1Shape(_ opaqueData: String) throws {
@@ -162,15 +234,6 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
             CipherDetailsResponseModel.self,
             from: responseData,
         )
-    }
-
-    private func passkeys(in account: ASImportableAccount) -> [ASImportableCredential.Passkey] {
-        account.items.flatMap { item in
-            item.credentials.compactMap { credential in
-                guard case let .passkey(passkey) = credential else { return nil }
-                return passkey
-            }
-        }
     }
 
     // Public V2 compatibility vectors copied byte-for-byte from sdk-internal@ac6eb96, the commit
@@ -219,4 +282,58 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
 
 private final class SDKBoundaryTokenProvider: ClientManagedTokens, @unchecked Sendable {
     func getAccessToken() async -> String? { nil }
+}
+
+private final class SDKBoundaryCredentialStore: Fido2CredentialStore, @unchecked Sendable {
+    private let cipher: BitwardenSdk.CipherView
+
+    init(cipher: BitwardenSdk.CipherView) {
+        self.cipher = cipher
+    }
+
+    func findCredentials(ids: [Data]?, ripId: String, userHandle: Data?) async throws -> [BitwardenSdk.CipherView] {
+        [cipher]
+    }
+
+    func allCredentials() async throws -> [BitwardenSdk.CipherListView] {
+        []
+    }
+
+    func saveCredential(cred: BitwardenSdk.EncryptionContext) async throws {
+        throw SDKBoundaryFido2Error.unexpectedSave
+    }
+}
+
+private final class SDKBoundaryUserInterface: Fido2UserInterface, @unchecked Sendable {
+    func checkUser(options: CheckUserOptions, hint: UiHint) async throws -> CheckUserResult {
+        guard options.requireVerification == .required else {
+            throw SDKBoundaryFido2Error.prfDidNotRequireVerification
+        }
+        return CheckUserResult(userPresent: true, userVerified: true)
+    }
+
+    func pickCredentialForAuthentication(
+        availableCredentials: [BitwardenSdk.CipherView],
+    ) async throws -> BitwardenSdk.CipherViewWrapper {
+        guard let cipher = availableCredentials.first else {
+            throw SDKBoundaryFido2Error.missingCredential
+        }
+        return BitwardenSdk.CipherViewWrapper(cipher: cipher)
+    }
+
+    func checkUserAndPickCredentialForCreation(
+        options: CheckUserOptions,
+        newCredential: Fido2CredentialNewView,
+    ) async throws -> CheckUserAndPickCredentialForCreationResult {
+        throw SDKBoundaryFido2Error.unexpectedCreation
+    }
+
+    func isVerificationEnabled() -> Bool { true }
+}
+
+private enum SDKBoundaryFido2Error: Error {
+    case missingCredential
+    case prfDidNotRequireVerification
+    case unexpectedCreation
+    case unexpectedSave
 }
