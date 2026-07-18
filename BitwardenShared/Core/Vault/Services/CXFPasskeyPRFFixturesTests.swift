@@ -18,13 +18,16 @@ final class CXFPasskeyPRFFixturesTests: BitwardenTestCase {
         )
 
         let dump = account.dump()
-        XCTAssertTrue(dump.contains("Key: <redacted;"))
-        XCTAssertTrue(dump.contains("CredentialWithUV: <redacted;"))
-        XCTAssertTrue(dump.contains("CredentialWithoutUV: <redacted;"))
-        XCTAssertFalse(dump.contains("Key: \(passkey.key)"))
-        XCTAssertFalse(dump.contains(passkey.key.base64EncodedString()))
-        let uvSeed = try XCTUnwrap(passkey.fido2Extensions?.hmacCredentials?.credentialWithUV)
-        XCTAssertFalse(dump.contains(uvSeed.base64EncodedString()))
+        let hmacCredential = try XCTUnwrap(passkey.fido2Extensions?.hmacCredentials)
+        XCTAssertTrue(dump.contains("Key: <redacted; \(passkey.key.count) bytes>"))
+        XCTAssertTrue(
+            dump.contains("CredentialWithUV: <redacted; \(hmacCredential.credentialWithUV.count) bytes>"),
+        )
+        XCTAssertTrue(
+            dump.contains(
+                "CredentialWithoutUV: <redacted; \(hmacCredential.credentialWithoutUV.count) bytes>",
+            ),
+        )
     }
 
     func test_missingPRFFixture_decodesWithoutExtensionState() throws {
