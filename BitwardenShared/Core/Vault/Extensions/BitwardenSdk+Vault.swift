@@ -268,9 +268,9 @@ extension CipherSecureNoteModel {
 extension CipherSSHKeyModel {
     init(sshKey: BitwardenSdk.SshKey) {
         self.init(
-            keyFingerprint: sshKey.fingerprint,
+            keyFingerprint: sshKey.fingerprint ?? "",
             privateKey: sshKey.privateKey,
-            publicKey: sshKey.publicKey,
+            publicKey: sshKey.publicKey ?? "",
         )
     }
 }
