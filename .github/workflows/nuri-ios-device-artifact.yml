@@ -1,0 +1,302 @@
+name: Nuri iOS Unsigned Device Artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NURI_SDK_REF: 729a39aaf585782f11d19c3c650b3356ed0f52be
+  NURI_SDK_RELEASE_TAG: v3.0.0-2-ac6eb96
+  NURI_SDK_BINARY_URL: https://github.com/nuri-com/sdk-swift/releases/download/v3.0.0-2-ac6eb96/BitwardenFFI-3.0.0-ac6eb96.xcframework.zip
+  NURI_SDK_BINARY_SHA256: 65280612cee82d9f902ed139b5ef5fc2e5c3f03778bb731469ad32fd7fcb32f4
+  NURI_SDK_INTERNAL_REF: ac6eb96c40c06657d4625b37b3563d3adc184a80
+  NURI_PACKAGE_RESOLVED_SHA256: 4466614de714994dbc2a1a6c0ccb2d50872112c93c841eb9b59a51f3e99b5995
+  MAIN_BUNDLE_ID: com.nuri.bitwarden.prf
+  AUTOFILL_BUNDLE_ID: com.nuri.bitwarden.prf.autofill
+  APPLE_TEAM_ID: MH2SRQ3N27
+  PRIMARY_APP_GROUP: group.com.nuri.bitwarden.prf
+  SHARED_APP_GROUP: group.com.nuri.bitwarden.prf.shared
+  KEYCHAIN_GROUP: MH2SRQ3N27.com.nuri.bitwarden.prf
+
+jobs:
+  build-unsigned-device-app:
+    name: Xcode 26.5 unsigned ARM64 app
+    runs-on: macos-26
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+        working-directory: ios
+
+    steps:
+      - name: Check out exact iOS source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          path: ios
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Select Xcode 26.5
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "26.5"
+
+      - name: Verify source and public SDK pins
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(cat .xcode-version)" = "26.5"
+          test "$(xcodebuild -version | head -1)" = "Xcode 26.5"
+          test "$(jq '[.pins[] | select(.identity == "sdk-swift")] | length' Bitwarden.xcworkspace/xcshareddata/swiftpm/Package.resolved)" = "1"
+          test "$(jq -r '.pins[] | select(.identity == "sdk-swift") | .location' Bitwarden.xcworkspace/xcshareddata/swiftpm/Package.resolved)" = "https://github.com/nuri-com/sdk-swift"
+          test "$(jq -r '.pins[] | select(.identity == "sdk-swift") | .state.revision' Bitwarden.xcworkspace/xcshareddata/swiftpm/Package.resolved)" = "$NURI_SDK_REF"
+          test "$(shasum -a 256 Bitwarden.xcworkspace/xcshareddata/swiftpm/Package.resolved | awk '{print $1}')" = "$NURI_PACKAGE_RESOLVED_SHA256"
+
+      - name: Bootstrap public-SDK workspace
+        run: |
+          set -euo pipefail
+          brew bundle
+          ./Scripts/bootstrap.sh || ./Scripts/bootstrap.sh
+
+      - name: Test CXF and BlobV1 boundaries
+        run: |
+          set -euo pipefail
+          xcrun xcodebuild test \
+            -workspace Bitwarden.xcworkspace \
+            -scheme BitwardenShared \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5" \
+            -derivedDataPath build/TestDerivedData \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -only-testing:BitwardenSharedTests/CXFPasskeyPRFFixturesTests \
+            -only-testing:BitwardenSharedTests/ImportCiphersSDKBoundaryTests \
+            -only-testing:BitwardenSharedTests/ImportCiphersRepositoryTests \
+            -only-testing:BitwardenSharedTests/ImportCiphersRequestTests \
+            -only-testing:BitwardenSharedTests/ImportCXFProcessorTests \
+            -only-testing:BitwardenSharedTests/BitwardenSdkVaultCipherDetailsResponseModelTests \
+            -only-testing:BitwardenSharedTests/BitwardenSdkVaultFido2CredentialTests \
+            -only-testing:BitwardenSharedTests/CipherServiceTests/test_replaceCiphers \
+            -only-testing:BitwardenSharedTests/SyncAPIServiceTests/test_sync_withCiphers \
+            -only-testing:BitwardenSharedTests/SyncServiceTests/test_fetchSync_ciphers \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet
+          test "$(git -C build/SourcePackages/checkouts/sdk-swift rev-parse HEAD)" = "$NURI_SDK_REF"
+          sdk_package="build/SourcePackages/checkouts/sdk-swift/Package.swift"
+          grep -Fq "url: \"$NURI_SDK_BINARY_URL\"" "$sdk_package"
+          grep -Fq "checksum: \"$NURI_SDK_BINARY_SHA256\"" "$sdk_package"
+          test "$NURI_SDK_RELEASE_TAG" = "v3.0.0-2-${NURI_SDK_INTERNAL_REF:0:7}"
+          test "$(shasum -a 256 Bitwarden.xcworkspace/xcshareddata/swiftpm/Package.resolved | awk '{print $1}')" = "$NURI_PACKAGE_RESOLVED_SHA256"
+
+      - name: Build normal unsigned device scheme
+        run: |
+          set -euo pipefail
+          xcrun xcodebuild build \
+            -workspace Bitwarden.xcworkspace \
+            -scheme Bitwarden \
+            -configuration Debug \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build/DeviceDerivedData \
+            -clonedSourcePackagesDirPath build/SourcePackages \
+            -resultBundlePath build/nuri-device-build.xcresult \
+            -onlyUsePackageVersionsFromResolvedFile \
+            BASE_BUNDLE_ID="$MAIN_BUNDLE_ID" \
+            ORGANIZATION_IDENTIFIER=com.nuri \
+            SHARED_APP_GROUP_IDENTIFIER="$SHARED_APP_GROUP" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            AppIdentifierPrefix="$APPLE_TEAM_ID." \
+            "BMPW_BUNDLE_DISPLAY_NAME=Bitwarden PRF" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            -quiet
+
+      - name: Prune, validate, and package candidate
+        run: |
+          set -euo pipefail
+
+          app="$PWD/build/DeviceDerivedData/Build/Products/Debug-iphoneos/Bitwarden.app"
+          autofill="$app/PlugIns/BitwardenAutoFillExtension.appex"
+          action="$app/PlugIns/BitwardenActionExtension.appex"
+          notification="$app/PlugIns/BitwardenNotificationExtension.appex"
+          share="$app/PlugIns/BitwardenShareExtension.appex"
+          watch="$app/Watch"
+
+          test -d "$app"
+          test -d "$autofill"
+          test -d "$action"
+          test -d "$notification"
+          test -d "$share"
+          test -d "$watch"
+          rm -rf -- "$action" "$notification" "$share" "$watch"
+
+          remaining_appex="$(find "$app" -type d -name '*.appex' -print | LC_ALL=C sort)"
+          test "$remaining_appex" = "$autofill"
+          test ! -e "$app/Watch"
+
+          read_plist() {
+            /usr/libexec/PlistBuddy -c "Print :$2" "$1"
+          }
+
+          main_info="$app/Info.plist"
+          autofill_info="$autofill/Info.plist"
+          test "$(read_plist "$main_info" CFBundleIdentifier)" = "$MAIN_BUNDLE_ID"
+          test "$(read_plist "$autofill_info" CFBundleIdentifier)" = "$AUTOFILL_BUNDLE_ID"
+          test "$(read_plist "$main_info" BitwardenAppIdentifier)" = "$MAIN_BUNDLE_ID"
+          test "$(read_plist "$autofill_info" BitwardenAppIdentifier)" = "$MAIN_BUNDLE_ID"
+          test "$(read_plist "$main_info" BitwardenAuthenticatorSharedAppGroup)" = "$SHARED_APP_GROUP"
+          test "$(read_plist "$main_info" BitwardenKeychainAccessGroup)" = "$KEYCHAIN_GROUP"
+          test "$(read_plist "$autofill_info" BitwardenKeychainAccessGroup)" = "$KEYCHAIN_GROUP"
+          test "$(read_plist "$autofill_info" NSExtension:NSExtensionAttributes:ASCredentialProviderExtensionCapabilities:ProvidesPasskeys)" = "true"
+          test "$(read_plist "$autofill_info" NSExtension:NSExtensionAttributes:ASCredentialProviderExtensionCapabilities:SupportsCredentialExchange)" = "true"
+
+          main_executable="$app/$(read_plist "$main_info" CFBundleExecutable)"
+          autofill_executable="$autofill/$(read_plist "$autofill_info" CFBundleExecutable)"
+          test "$(lipo -archs "$main_executable" | xargs)" = "arm64"
+          test "$(lipo -archs "$autofill_executable" | xargs)" = "arm64"
+          test ! -e "$app/embedded.mobileprovision"
+          test ! -e "$autofill/embedded.mobileprovision"
+          test ! -e "$app/_CodeSignature"
+          test ! -e "$autofill/_CodeSignature"
+          if codesign -d "$app" >/dev/null 2>&1; then
+            echo "Main app is unexpectedly signed" >&2
+            exit 1
+          fi
+          if codesign -d "$autofill" >/dev/null 2>&1; then
+            echo "AutoFill extension is unexpectedly signed" >&2
+            exit 1
+          fi
+
+          output_dir="$PWD/build/artifacts"
+          archive_name="bitwarden-ios-${GITHUB_SHA}-unsigned-arm64.zip"
+          manifest_name="bitwarden-ios-${GITHUB_SHA}-unsigned-arm64.files.sha256"
+          provenance_name="bitwarden-ios-${GITHUB_SHA}-unsigned-arm64.provenance.json"
+          archive="$output_dir/$archive_name"
+          manifest="$output_dir/$manifest_name"
+          provenance="$output_dir/$provenance_name"
+          mkdir -p "$output_dir"
+
+          (
+            cd "$(dirname "$app")"
+            find "$(basename "$app")" -type f -print | LC_ALL=C sort | while IFS= read -r file; do
+              printf '%s  %s\n' "$(shasum -a 256 "$file" | awk '{print $1}')" "$file"
+            done
+          ) > "$manifest"
+
+          COPYFILE_DISABLE=1 ditto -c -k --keepParent "$app" "$archive"
+          (
+            cd "$output_dir"
+            shasum -a 256 "$archive_name" > "$archive_name.sha256"
+            shasum -a 256 -c "$archive_name.sha256"
+          )
+          unzip -tq "$archive"
+
+          archive_sha256="$(shasum -a 256 "$archive" | awk '{print $1}')"
+          archive_bytes="$(wc -c < "$archive" | tr -d ' ')"
+          manifest_sha256="$(shasum -a 256 "$manifest" | awk '{print $1}')"
+          manifest_files="$(wc -l < "$manifest" | tr -d ' ')"
+          xcode_version="$(xcodebuild -version)"
+          sdk_checkout_sha="$(git -C build/SourcePackages/checkouts/sdk-swift rev-parse HEAD)"
+          source_commit_time="$(git show -s --format=%cI "$GITHUB_SHA")"
+
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg source_sha "$GITHUB_SHA" \
+            --arg source_commit_time "$source_commit_time" \
+            --arg run_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT" \
+            --arg xcode "$xcode_version" \
+            --arg sdk_url "https://github.com/nuri-com/sdk-swift" \
+            --arg sdk_revision "$sdk_checkout_sha" \
+            --arg sdk_release_tag "$NURI_SDK_RELEASE_TAG" \
+            --arg sdk_binary_url "$NURI_SDK_BINARY_URL" \
+            --arg sdk_binary_sha256 "$NURI_SDK_BINARY_SHA256" \
+            --arg sdk_internal_revision "$NURI_SDK_INTERNAL_REF" \
+            --arg package_resolved_sha256 "$NURI_PACKAGE_RESOLVED_SHA256" \
+            --arg runner_os "$RUNNER_OS" \
+            --arg runner_arch "$RUNNER_ARCH" \
+            --arg runner_image_os "${ImageOS:-}" \
+            --arg runner_image_version "${ImageVersion:-}" \
+            --arg team_id "$APPLE_TEAM_ID" \
+            --arg main_bundle_id "$MAIN_BUNDLE_ID" \
+            --arg autofill_bundle_id "$AUTOFILL_BUNDLE_ID" \
+            --arg primary_app_group "$PRIMARY_APP_GROUP" \
+            --arg shared_app_group "$SHARED_APP_GROUP" \
+            --arg keychain_group "$KEYCHAIN_GROUP" \
+            --arg archive "$archive_name" \
+            --arg archive_sha256 "$archive_sha256" \
+            --argjson archive_bytes "$archive_bytes" \
+            --arg manifest "$manifest_name" \
+            --arg manifest_sha256 "$manifest_sha256" \
+            --argjson manifest_files "$manifest_files" \
+            '{
+              schema_version: 1,
+              source: {
+                repository: $repository,
+                sha: $source_sha,
+                commit_time: $source_commit_time,
+                actions_run: $run_url
+              },
+              sdk: {
+                url: $sdk_url,
+                revision: $sdk_revision,
+                release_tag: $sdk_release_tag,
+                binary_url: $sdk_binary_url,
+                binary_sha256: $sdk_binary_sha256,
+                sdk_internal_revision: $sdk_internal_revision,
+                package_resolved_sha256: $package_resolved_sha256
+              },
+              runner: {
+                os: $runner_os,
+                architecture: $runner_arch,
+                image_os: (if $runner_image_os == "" then null else $runner_image_os end),
+                image_version: (if $runner_image_version == "" then null else $runner_image_version end)
+              },
+              build: {
+                xcode: $xcode,
+                configuration: "Debug",
+                destination: "generic/platform=iOS",
+                architecture: "arm64",
+                unsigned: true
+              },
+              candidate: {
+                team_id: $team_id,
+                bundles: {
+                  main: $main_bundle_id,
+                  autofill: $autofill_bundle_id
+                },
+                app_groups: [$primary_app_group, $shared_app_group],
+                keychain_group: $keychain_group,
+                retained_extensions: ["BitwardenAutoFillExtension.appex"],
+                pruned: [
+                  "BitwardenActionExtension.appex",
+                  "BitwardenNotificationExtension.appex",
+                  "BitwardenShareExtension.appex",
+                  "Watch"
+                ]
+              },
+              inner_archive: {
+                filename: $archive,
+                sha256: $archive_sha256,
+                bytes: $archive_bytes
+              },
+              per_file_manifest: {
+                filename: $manifest,
+                sha256: $manifest_sha256,
+                files: $manifest_files
+              }
+            }' > "$provenance"
+
+          jq -e ".schema_version == 1 and .source.sha == \"$GITHUB_SHA\" and .sdk.revision == \"$NURI_SDK_REF\" and .sdk.binary_sha256 == \"$NURI_SDK_BINARY_SHA256\" and .build.unsigned == true" "$provenance" >/dev/null
+
+      - name: Upload immutable inner artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bitwarden-ios-${{ github.sha }}-unsigned-arm64
+          path: ios/build/artifacts
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
