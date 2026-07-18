@@ -24,7 +24,8 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
             "SDK import omitted encrypted FIDO2 extension state; value redacted",
         )
 
-        let ciphersClient = client.vault().ciphers()
+        let sdkVaultClient: BitwardenSdk.VaultClient = client.vault()
+        let ciphersClient = sdkVaultClient.ciphers()
         let importedView = try await ciphersClient.decrypt(cipher: importedCipher)
         let encryptedContext = try await ciphersClient.encrypt(cipherView: importedView)
         let blobCipher = encryptedContext.cipher
