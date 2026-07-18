@@ -89,7 +89,8 @@ jobs:
         working-directory: ios
         env:
           LOCAL_SDK: "true"
-        run: ./Scripts/bootstrap.sh
+        run: |
+          ./Scripts/bootstrap.sh || ./Scripts/bootstrap.sh
 
       - name: Test import and SDK boundaries
         working-directory: ios
