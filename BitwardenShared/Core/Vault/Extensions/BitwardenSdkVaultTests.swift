@@ -55,24 +55,20 @@ class BitwardenSdkVaultCipherDetailsResponseModelTests: BitwardenTestCase {
     /// Composite cipher responses preserve their opaque data without requiring legacy fields.
     func test_compositeCipherResponseRoundTrip() throws {
         let opaqueCipherData = CipherBlobV1Fixtures.recordedSDKBlob
-        let json = Data(
-            """
-            {
-              "collectionIds": [],
-              "creationDate": "2026-07-18T10:00:00Z",
-              "data": "\(opaqueCipherData)",
-              "edit": true,
-              "favorite": false,
-              "id": "synthetic-composite-cipher",
-              "name": null,
-              "organizationUseTotp": false,
-              "reprompt": 0,
-              "revisionDate": "2026-07-18T10:00:00Z",
-              "type": 1,
-              "viewPassword": true
-            }
-            """.utf8,
-        )
+        let json = try JSONSerialization.data(withJSONObject: [
+            "collectionIds": [],
+            "creationDate": "2026-07-18T10:00:00Z",
+            "data": opaqueCipherData,
+            "edit": true,
+            "favorite": false,
+            "id": "4c862f31-0303-4d19-8bc8-0a7f5028400f",
+            "name": NSNull(),
+            "organizationUseTotp": false,
+            "reprompt": 0,
+            "revisionDate": "2026-07-18T10:00:00Z",
+            "type": 1,
+            "viewPassword": true,
+        ])
 
         let responseModel = try CipherDetailsResponseModel.decoder.decode(
             CipherDetailsResponseModel.self,

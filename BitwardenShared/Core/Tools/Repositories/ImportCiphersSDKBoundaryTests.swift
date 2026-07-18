@@ -149,7 +149,7 @@ final class ImportCiphersSDKBoundaryTests: XCTestCase {
             "data": blobData,
             "edit": true,
             "favorite": false,
-            "id": "synthetic-composite-cipher",
+            "id": "4c862f31-0303-4d19-8bc8-0a7f5028400f",
             "key": blobKey,
             "name": NSNull(),
             "organizationUseTotp": false,
