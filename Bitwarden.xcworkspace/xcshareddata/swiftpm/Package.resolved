@@ -123,7 +123,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/nuri-com/sdk-swift",
       "state" : {
-        "revision" : "3c0707d3dde398e388119b13e3bc471afe7ef432"
+        "revision" : "729a39aaf585782f11d19c3c650b3356ed0f52be"
       }
     },
     {
