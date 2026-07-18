@@ -338,6 +338,29 @@ class BitwardenSdkVaultCipherSSHKeyModelTests: BitwardenTestCase {
     }
 }
 
+// MARK: - Fido2Credential
+
+class BitwardenSdkVaultFido2CredentialTests: BitwardenTestCase {
+    /// SDK and API conversions keep encrypted extension state opaque and unchanged.
+    func test_extensionStateRoundTripAcrossSDKAndAPIModels() {
+        let opaqueExtensionState =
+            "2.c3ludGhldGljLWl2|c3ludGhldGljLWNpcGhlcnRleHQ=|c3ludGhldGljLW1hYw=="
+        let sdkCredential = Fido2Credential.fixture(extensionState: opaqueExtensionState)
+
+        let apiCredential = CipherLoginFido2Credential(fido2Credential: sdkCredential)
+        let roundTrippedCredential = Fido2Credential(cipherLoginFido2Credential: apiCredential)
+
+        XCTAssertTrue(
+            apiCredential.extensionState == opaqueExtensionState,
+            "SDK to API extension state mismatch; value redacted",
+        )
+        XCTAssertTrue(
+            roundTrippedCredential.extensionState == opaqueExtensionState,
+            "API to SDK extension state mismatch; value redacted",
+        )
+    }
+}
+
 // MARK: - CipherType
 
 class BitwardenSdkVaultCipherTypeTests: BitwardenTestCase {

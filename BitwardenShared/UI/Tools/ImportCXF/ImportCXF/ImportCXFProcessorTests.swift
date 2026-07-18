@@ -268,6 +268,31 @@ class ImportCXFProcessorTests: BitwardenTestCase {
         XCTAssertEqual(errorReporter.errors as? [BitwardenTestError], [.example])
     }
 
+    /// `perform(_:)` reports only the redacted repository error when SDK parsing fails.
+    @MainActor
+    func test_perform_mainButtonTappedSDKImportFailedLogsRedactedError() async throws {
+        subject.state.status = .start
+        subject.state.credentialImportToken = UUID(uuidString: "e8f3b381-aac2-4379-87fe-14fac61079ec")
+        importCiphersRepository.importCiphersResult.throwing(ImportCiphersRepositoryError.sdkImportFailed)
+
+        await subject.perform(.mainButtonTapped)
+
+        guard checkAlertShownWhenNotInCorrectIOSVersion() else {
+            return
+        }
+        guard case let .failure(message) = subject.state.status else {
+            return XCTFail("Importing status is not failure")
+        }
+        XCTAssertEqual(message, Localizations.thereWasAnIssueImportingAllOfYourPasswordsNoDataWasDeleted)
+
+        guard let loggedError = errorReporter.errors.first as? ImportCiphersRepositoryError,
+              case .sdkImportFailed = loggedError
+        else {
+            return XCTFail("Expected a redacted SDK import error")
+        }
+        XCTAssertEqual(errorReporter.errors.count, 1)
+    }
+
     // MARK: Private
 
     /// Performs `.perform(.mainButtonTapped)` to start import and checks everything went good.

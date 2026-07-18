@@ -1,0 +1,117 @@
+name: Nuri PRF Import Boundary
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/nuri-prf-import.yml"
+      - "AuthenticatorShared/UI/Vault/PreviewContent/BitwardenSdk+VaultFixtures.swift"
+      - "BitwardenKit/Core/Vault/Services/Mocks/BitwardenSdk+VaultMocking.swift"
+      - "BitwardenShared/Core/Tools/Repositories/ImportCiphersRepository*"
+      - "BitwardenShared/Core/Tools/Repositories/ImportCiphersSDKBoundaryTests.swift"
+      - "BitwardenShared/Core/Vault/Extensions/BitwardenSdk+Vault.swift"
+      - "BitwardenShared/Core/Vault/Extensions/BitwardenSdkVaultTests.swift"
+      - "BitwardenShared/Core/Vault/Models/API/CipherLoginFido2Credential.swift"
+      - "BitwardenShared/Core/Vault/Services/API/Fixtures/syncWithCipher.json"
+      - "BitwardenShared/Core/Vault/Services/API/Sync/SyncAPIServiceTests.swift"
+      - "BitwardenShared/Core/Vault/Services/SyncServiceTests.swift"
+      - "BitwardenShared/Core/Vault/Services/TestHelpers/CXFPasskeyPRF+Fixtures.swift"
+      - "BitwardenShared/UI/Tools/ImportCXF/ImportCXF/ImportCXFProcessor*"
+      - "BitwardenShared/UI/Vault/PreviewContent/BitwardenSdk+VaultFixtures.swift"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NURI_SDK_REF: ac6eb96c40c06657d4625b37b3563d3adc184a80
+
+jobs:
+  test-prf-import-boundary:
+    name: AuthenticationServices to SDK cipher preservation
+    runs-on: macos-26
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out iOS fork
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          path: ios
+          persist-credentials: false
+
+      - name: Check out pinned Nuri SDK
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: nuri-com/sdk-internal
+          ref: ${{ env.NURI_SDK_REF }}
+          path: sdk-internal
+          persist-credentials: false
+
+      - name: Select Xcode 26.5
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "26.5"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: sdk-internal -> target
+          key: nuri-sdk-swift-prf-import
+
+      - name: Build pinned Nuri Swift SDK
+        working-directory: sdk-internal/crates/bitwarden-uniffi/swift
+        env:
+          DEBUG_MODE: "true"
+        run: ./build.sh
+
+      - name: Verify local SDK import contract
+        run: |
+          test "$(git -C sdk-internal rev-parse HEAD)" = "$NURI_SDK_REF"
+          grep -q "extensionState" sdk-internal/crates/bitwarden-uniffi/swift/Sources/BitwardenSdk/BitwardenVault.swift
+          grep -q "path: ../sdk-internal/crates/bitwarden-uniffi/swift" ios/Configs/local-sdk.yml
+
+      - name: Install iOS build tools
+        working-directory: ios
+        run: brew bundle
+
+      - name: Generate projects with the pinned local SDK
+        working-directory: ios
+        env:
+          LOCAL_SDK: "true"
+        run: ./Scripts/bootstrap.sh
+
+      - name: Test import and SDK boundaries
+        working-directory: ios
+        run: |
+          xcrun xcodebuild test \
+            -workspace Bitwarden.xcworkspace \
+            -scheme BitwardenShared \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5" \
+            -derivedDataPath build/DerivedData \
+            -only-testing:BitwardenSharedTests/CXFPasskeyPRFFixturesTests \
+            -only-testing:BitwardenSharedTests/ImportCiphersSDKBoundaryTests \
+            -only-testing:BitwardenSharedTests/ImportCiphersRepositoryTests \
+            -only-testing:BitwardenSharedTests/ImportCXFProcessorTests \
+            -only-testing:BitwardenSharedTests/BitwardenSdkVaultFido2CredentialTests \
+            -only-testing:BitwardenSharedTests/SyncAPIServiceTests/test_sync_withCiphers \
+            -only-testing:BitwardenSharedTests/SyncServiceTests/test_fetchSync_ciphers \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet
+
+      - name: Compile Authenticator shared call sites
+        working-directory: ios
+        run: |
+          xcrun xcodebuild build \
+            -workspace Bitwarden.xcworkspace \
+            -scheme AuthenticatorShared \
+            -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet

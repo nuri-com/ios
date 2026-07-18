@@ -192,6 +192,7 @@ extension CipherLoginFido2Credential {
             creationDate: credential.creationDate,
             credentialId: credential.credentialId,
             discoverable: credential.discoverable,
+            extensionState: credential.extensionState,
             keyAlgorithm: credential.keyAlgorithm,
             keyCurve: credential.keyCurve,
             keyType: credential.keyType,
@@ -680,6 +681,7 @@ extension BitwardenSdk.Fido2Credential: @retroactive Identifiable, @unchecked @r
             userDisplayName: model.userDisplayName,
             discoverable: model.discoverable,
             creationDate: model.creationDate,
+            extensionState: model.extensionState,
         )
     }
 }

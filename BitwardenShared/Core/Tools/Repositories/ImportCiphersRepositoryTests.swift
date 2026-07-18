@@ -108,6 +108,60 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
         XCTAssertEqual(result, expectedResults)
     }
 
+    /// `importCiphers(credentialImportToken:onProgress:)` passes the complete AuthenticationServices
+    /// passkey to the SDK and keeps the SDK cipher's opaque extension state through the API boundary.
+    @MainActor
+    func test_importCiphers_passkeyPRFPreservedAcrossSDKBoundary() async throws {
+        guard #available(iOS 26.4, *) else {
+            throw XCTSkip("PRF-capable CXF passkeys require iOS 26.4")
+        }
+
+        let credentialImportManager = MockCredentialImportManager()
+        credentialImportManager.importCredentialsResult = try .success(getASExportedCredentialDataAsJson(
+            accounts: [CXFPasskeyPRFFixtures.account(for: .valid)],
+        ))
+        credentialManagerFactory.importManager = credentialImportManager
+
+        let opaqueExtensionState =
+            "2.c3ludGhldGljLWl2|c3ludGhldGljLWNpcGhlcnRleHQ=|c3ludGhldGljLW1hYw=="
+        let sdkCipher = Cipher.fixture(
+            id: "synthetic-passkey-cipher",
+            login: .fixture(
+                fido2Credentials: [.fixture(extensionState: opaqueExtensionState)],
+            ),
+            type: .login,
+        )
+        clientService.mockExporters.importCxfReturnValue = [sdkCipher]
+        cxfCredentialsResultBuilder.buildResult = [CXFCredentialsResult(count: 1, type: .passkey)]
+
+        _ = try await subject.importCiphers(
+            credentialImportToken: UUID(uuidString: "e8f3b381-aac2-4379-87fe-14fac61079ec")!,
+            onProgress: { _ in },
+        )
+
+        let sdkPayload = try XCTUnwrap(clientService.mockExporters.importCxfReceivedPayload)
+        let sdkAccount = try JSONDecoder.cxfDecoder.decode(
+            ASImportableAccount.self,
+            from: Data(sdkPayload.utf8),
+        )
+        let sdkPasskey = try XCTUnwrap(passkeys(in: sdkAccount).first)
+        XCTAssertTrue(
+            CXFPasskeyPRFMatcher.passkeyMatches(sdkPasskey, CXFPasskeyPRFFixtures.validPasskey),
+            "AuthenticationServices to SDK passkey mismatch; credential material redacted",
+        )
+
+        let importedCipher = try XCTUnwrap(importCiphersService.importCiphersCiphers?.first)
+        XCTAssertTrue(
+            importedCipher == sdkCipher,
+            "SDK cipher changed before import API submission; encrypted credential material redacted",
+        )
+        let requestModel = CipherRequestModel(cipher: importedCipher)
+        XCTAssertTrue(
+            requestModel.login?.fido2Credentials?.first?.extensionState == opaqueExtensionState,
+            "Opaque FIDO2 extension state was not preserved; value redacted",
+        )
+    }
+
     /// `importCiphers(credentialImportToken:progressDelegate:)` throws `noDataFound`
     /// when there are no accounts after importing credentials.
     @MainActor
@@ -152,7 +206,7 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
 
         clientService.mockExporters.importCxfThrowableError = BitwardenTestError.example
 
-        await assertAsyncThrows(error: BitwardenTestError.example) {
+        await assertAsyncThrows(error: ImportCiphersRepositoryError.sdkImportFailed) {
             _ = try await subject.importCiphers(
                 credentialImportToken: UUID(
                     uuidString: "e8f3b381-aac2-4379-87fe-14fac61079ec",
@@ -250,5 +304,13 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
             throw BitwardenError.dataError("Failed to encode ASExportedCredentialData")
         }
         return credentialDataJsonString
+    }
+
+    @available(iOS 26.4, *)
+    private func passkeys(in account: ASImportableAccount) -> [ASImportableCredential.Passkey] {
+        account.items.flatMap(\.credentials).compactMap { credential in
+            guard case let .passkey(passkey) = credential else { return nil }
+            return passkey
+        }
     }
 }

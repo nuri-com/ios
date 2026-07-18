@@ -677,6 +677,7 @@ extension Fido2Credential {
         creationDate: Date = Date(year: 2024, month: 3, day: 15, hour: 9, minute: 15),
         credentialId: String = "",
         discoverable: String = "",
+        extensionState: String? = nil,
         keyAlgorithm: String = "",
         keyCurve: String = "",
         keyType: String = "",
@@ -701,6 +702,7 @@ extension Fido2Credential {
             userDisplayName: userDisplayName,
             discoverable: discoverable,
             creationDate: creationDate,
+            extensionState: extensionState,
         )
     }
 }
@@ -751,6 +753,7 @@ extension Fido2CredentialView {
         creationDate: Date = Date(year: 2024, month: 3, day: 15, hour: 9, minute: 15),
         credentialId: String = "",
         discoverable: String = "",
+        extensionState: String? = nil,
         keyAlgorithm: String = "",
         keyCurve: String = "",
         keyType: String = "",
@@ -775,6 +778,7 @@ extension Fido2CredentialView {
             userDisplayName: userDisplayName,
             discoverable: discoverable,
             creationDate: creationDate,
+            extensionState: extensionState,
         )
     }
 }

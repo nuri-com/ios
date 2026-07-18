@@ -227,6 +227,7 @@ public extension Fido2Credential {
             userDisplayName: fido2CredentialView.userDisplayName,
             discoverable: fido2CredentialView.discoverable,
             creationDate: fido2CredentialView.creationDate,
+            extensionState: fido2CredentialView.extensionState,
         )
     }
 }
@@ -247,6 +248,7 @@ public extension Fido2CredentialView {
             userDisplayName: fido2Credential.userDisplayName,
             discoverable: fido2Credential.discoverable,
             creationDate: fido2Credential.creationDate,
+            extensionState: fido2Credential.extensionState,
         )
     }
 }

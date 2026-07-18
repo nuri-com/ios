@@ -42,6 +42,7 @@
             "userDisplayName": "encrypted userDisplayName",
             "counter": "encrypted counter",
             "discoverable": "encrypted discoverable",
+            "extensionState": "encrypted extensionState",
             "creationDate": "2024-03-15T17:31:02.244Z"
           }
         ]

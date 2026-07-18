@@ -88,7 +88,14 @@ extension DefaultImportCiphersRepository: ImportCiphersRepository {
             throw ImportCiphersRepositoryError.dataEncodingFailed
         }
 
-        let ciphers = try await clientService.exporters().importCxf(payload: accountJsonString)
+        let ciphers: [Cipher]
+        do {
+            ciphers = try await clientService.exporters().importCxf(payload: accountJsonString)
+        } catch {
+            // SDK import failures can originate while parsing plaintext credential material.
+            // Never forward the underlying error to telemetry because it may contain payload data.
+            throw ImportCiphersRepositoryError.sdkImportFailed
+        }
 
         await onProgress(0.3)
 
@@ -116,4 +123,5 @@ extension DefaultImportCiphersRepository: ImportCiphersRepository {
 enum ImportCiphersRepositoryError: Error {
     case noDataFound
     case dataEncodingFailed
+    case sdkImportFailed
 }
