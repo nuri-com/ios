@@ -1,4 +1,5 @@
 import AuthenticationServices
+import Foundation
 
 @available(iOS 26.0, *)
 extension ASImportableAccount {
@@ -56,13 +57,24 @@ extension ASImportableAccount {
                     }
                 case let .passkey(passkey):
                     credResult.appendWithIndentation("CredentialID: \(passkey.credentialID)\n", level: 2)
-                    credResult.appendWithIndentation("Key: \(passkey.key)\n", level: 2)
+                    credResult.appendWithIndentation("Key: \(redacted(passkey.key))\n", level: 2)
                     credResult.appendWithIndentation(
                         "RelyingPartyIdentifier: \(passkey.relyingPartyIdentifier)\n",
                         level: 2,
                     )
                     credResult.appendWithIndentation("UserDisplayName: \(passkey.userDisplayName)\n", level: 2)
                     credResult.appendWithIndentation("Username: \(passkey.userName)\n", level: 2)
+                    if #available(iOS 26.4, *), let hmac = passkey.fido2Extensions?.hmacCredentials {
+                        credResult.appendWithIndentation("HMAC.Algorithm: \(hmac.algorithm)\n", level: 2)
+                        credResult.appendWithIndentation(
+                            "HMAC.CredentialWithUV: \(redacted(hmac.credentialWithUV))\n",
+                            level: 2,
+                        )
+                        credResult.appendWithIndentation(
+                            "HMAC.CredentialWithoutUV: \(redacted(hmac.credentialWithoutUV))\n",
+                            level: 2,
+                        )
+                    }
                 case let .totp(totp):
                     credResult.appendWithIndentation("Algorithm: \(totp.algorithm)\n", level: 2)
                     credResult.appendWithIndentation("Digits: \(totp.digits)\n", level: 2)
@@ -108,6 +120,10 @@ extension ASImportableAccount {
         dumpResult.append(itemsResult)
         return dumpResult
     }
+}
+
+private func redacted(_ data: Data) -> String {
+    "<redacted; \(data.count) bytes>"
 }
 
 private extension String {

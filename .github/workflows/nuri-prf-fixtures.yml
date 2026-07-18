@@ -1,0 +1,48 @@
+name: Nuri PRF Import Fixtures
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/nuri-prf-fixtures.yml"
+      - "BitwardenShared/Core/Vault/Services/CXFPasskeyPRFFixturesTests.swift"
+      - "BitwardenShared/Core/Vault/Services/TestHelpers/ASImportableAccount+Extensions.swift"
+      - "BitwardenShared/Core/Vault/Services/TestHelpers/CXFPasskeyPRF+Fixtures.swift"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-prf-import-fixtures:
+    name: Xcode 26.5 fixture compile and test
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode 26.5
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "26.5"
+
+      - name: Install repository build tools
+        run: brew bundle
+
+      - name: Generate Xcode projects
+        run: ./Scripts/bootstrap.sh
+
+      - name: Compile and test PRF import fixtures
+        run: |
+          xcrun xcodebuild test \
+            -workspace Bitwarden.xcworkspace \
+            -scheme BitwardenShared \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5" \
+            -derivedDataPath build/DerivedData \
+            -only-testing:BitwardenSharedTests/CXFPasskeyPRFFixturesTests \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet

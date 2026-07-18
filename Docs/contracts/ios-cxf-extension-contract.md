@@ -5,9 +5,10 @@ where WebAuthn/FIDO2 extensions (PRF, hmac-secret) live in the codebase. This is
 reference map for agents and reviewers, not a specification — the source code is the
 source of truth.
 
-Last updated: 2026-07-18. No `fido2Extensions` symbol exists in the iOS tree today;
-extension handling is spread across the SDK types and the `WebAuthnAuthentication*`
-domain structs below.
+Corrected 2026-07-18 against Apple's current AuthenticationServices documentation.
+The base Credential Exchange types start at iOS 26.0. Apple added
+`ASImportableCredential.Passkey.fido2Extensions`, `ASImportableFIDO2Extensions`,
+and `ASImportableFIDO2HMACCredential` in iOS 26.4.
 
 ---
 
@@ -33,9 +34,11 @@ SDK's string payloads, plus driving the system credential managers.
 
 ### Platform gating
 
-All CXF code is gated by `@available(iOS 26.0, *)`. Below iOS 26 the import/export
-processors set a failure status with the localized "not available for this device"
-message.
+The existing CXF import/export flow is gated by `@available(iOS 26.0, *)`. The
+FIDO2 extension types and the extended `Passkey` initializer are separately gated
+by `@available(iOS 26.4, *)`. Below iOS 26 the import/export processors set a
+failure status with the localized "not available for this device" message. A build
+that references the extension types requires the iOS 26.4 SDK or newer.
 
 ### Policy gating
 
@@ -145,29 +148,81 @@ enumerates:
 - `.basicAuthentication(BasicAuthentication)` — `userName`, `password` (each with
   `fieldType` + `value`).
 - `.passkey(Passkey)` — `credentialID`, `key`, `relyingPartyIdentifier`,
-  `userDisplayName`, `userName`.
+  `userDisplayName`, `userName`, `userHandle`, and, on iOS 26.4+,
+  optional `fido2Extensions`.
 - `.totp(TOTP)` — `algorithm`, `digits`, `issuer?`, `period`, `secret`, `userName?`.
 - `.note(Note)` — `content`.
 - `.creditCard(CreditCard)` — `fullName?`, `number?`, `cardType?`, `expiryDate?`,
   `validFrom?`, `verificationNumber?` (each optional, with `.value`).
 - `@unknown default` — logged as "unknown default".
 
-### CXF fixture
+### CXF fixtures
 
 `BitwardenShared/Core/Vault/Services/Fixtures/cxfTwoBasicAuthCiphers.json` — two
 login items (GitHub, Google) with `basic-auth` credentials. Dates are epoch seconds
 (e.g. `1732226366`). Loaded via `CXFFixtures.twoBasicAuthCiphers`.
 
+`BitwardenShared/Core/Vault/Services/TestHelpers/CXFPasskeyPRF+Fixtures.swift`
+contains only deterministic synthetic passkeys for the valid, missing-PRF,
+malformed-seed, duplicate, and unsupported-signing-key cases. The fixture tests
+encode and decode every case through Apple's AuthenticationServices `Codable`
+types. They do not exercise the production import mapping owned by issue #27.
+
 ---
 
 ## 5. WebAuthn / FIDO2 extensions (PRF + hmac-secret)
 
-The iOS app surfaces two FIDO2/WebAuthn extension areas. There is **no
-`fido2Extensions` symbol** in the iOS tree — extension inputs/outputs are modeled on
-three layers: (a) server-facing domain structs, (b) Bitwarden SDK types passed to
-the FIDO2 authenticator, (c) Apple `ASPasskey*` types.
+The iOS app surfaces FIDO2/WebAuthn extension data in four areas: (a) Apple
+Credential Exchange passkey types, (b) server-facing domain structs, (c) Bitwarden
+SDK types passed to the FIDO2 authenticator, and (d) Apple `ASPasskey*` assertion
+types.
 
-### 5.1 PRF — server-facing domain structs (`WebAuthnAuthentication*`)
+### 5.1 PRF — Apple Credential Exchange types (iOS 26.4+)
+
+Apple's current CXF model is:
+
+```swift
+ASImportableCredential.Passkey(
+    credentialID: Data,
+    relyingPartyIdentifier: String,
+    userName: String,
+    userDisplayName: String,
+    userHandle: Data,
+    key: Data,
+    fido2Extensions: ASImportableFIDO2Extensions?
+)
+
+ASImportableFIDO2Extensions(
+    hmacCredentials: ASImportableFIDO2HMACCredential?,
+    largeBlob: ASImportableFIDO2LargeBlob?
+)
+
+ASImportableFIDO2HMACCredential(
+    algorithm: .sha256,
+    credentialWithUV: Data,
+    credentialWithoutUV: Data
+)
+```
+
+The corresponding CXF members are `fido2Extensions.hmacCredentials.algorithm`
+(`hmac-sha256`), `credWithUV`, and `credWithoutUV`. Both credentials are raw
+32-byte HMAC seed state and are base64url-encoded only by the `Codable` boundary.
+They are not evaluated WebAuthn PRF outputs. `hmacCredentials` and the entire
+`fido2Extensions` object are optional; the two credential buffers are required
+when `hmacCredentials` is present.
+
+The passkey `key` remains PKCS#8 DER. AuthenticationServices transports its bytes
+but the shared importer must derive and validate the signing algorithm rather than
+assuming ES256. `largeBlob` exists in the Apple model but is not required by the
+first Nuri proof.
+
+Official references:
+
+- <https://developer.apple.com/documentation/authenticationservices/asimportablecredential/passkey>
+- <https://developer.apple.com/documentation/authenticationservices/asimportablefido2extensions>
+- <https://developer.apple.com/documentation/authenticationservices/asimportablefido2hmaccredential>
+
+### 5.2 PRF — server-facing domain structs (`WebAuthnAuthentication*`)
 
 All under `BitwardenShared/Core/Auth/Domain/`:
 
@@ -184,7 +239,7 @@ All under `BitwardenShared/Core/Auth/Domain/`:
 These structs are `Codable, Equatable, Hashable, Sendable` and mirror the W3C
 WebAuthn Level 3 dictionary shapes, referenced by spec links in each doc comment.
 
-### 5.2 PRF — SDK types (BitwardenSdk, Rust-backed)
+### 5.3 PRF — SDK types (BitwardenSdk, Rust-backed)
 
 Used by the autofill/credential services and the auth fixtures. These come from
 the `BitwardenSdk` package (Rust FFI) and are referenced throughout:
@@ -205,7 +260,7 @@ Fixture defaults live in:
 - `AuthenticatorShared/Core/Auth/Services/TestHelpers/BitwardenSdk+AuthFixtures.swift`
   (lines 59, 77): identical defaults for the Authenticator target.
 
-### 5.3 PRF — Apple bridging (`ASPasskeyAssertionCredential`)
+### 5.4 PRF — Apple bridging (`ASPasskeyAssertionCredential`)
 
 `BitwardenShared/Core/Autofill/Extensions/BitwardenSdk+Autofill.swift`:
 
@@ -227,13 +282,13 @@ Tests that confirm the current "nil extension" state:
   `MakeCredentialPrfInput`/`MakeCredentialPrfOutput` through the SDK, asserting the
   `Extensions` field carries `prf` on both input and output.
 
-### 5.4 PRF — server save-credential model
+### 5.5 PRF — server save-credential model
 
 `BitwardenShared/Core/Auth/Models/Request/WebAuthnLoginSaveCredentialRequestModel.swift`:
 
 - `supportsPrf: Bool` — "true if the credential was created with PRF support."
 - `deviceResponse: WebAuthnPublicKeyCredentialWithAttestationResponse` — the
-  attestation response sent back to the server (extension results omitted, see 5.1).
+  attestation response sent back to the server (extension results omitted, see 5.2).
 
 Tested in
 `BitwardenShared/Core/Auth/Services/API/Auth/Requests/WebAuthnLoginSaveCredentialRequestTests.swift`
@@ -244,9 +299,10 @@ paths round-trip through the assertion/creation option responses (fixtures in
 `BitwardenShared/Core/Auth/Services/API/Auth/Fixtures/WebAuthnLoginCredentialAssertionOptions.json`
 and `...CreationOptions.json`).
 
-### 5.5 hmac-secret
+### 5.6 Device-auth-key `hmac-secret`
 
-`hmac-secret` is referenced in exactly one domain model:
+Separate from CXF's iOS 26.4 `ASImportableFIDO2HMACCredential`, an encrypted
+device-auth-key HMAC secret is referenced in this domain model:
 
 - `BitwardenShared/Core/Auth/Models/Domain/DeviceAuthKeyKeychainRecord.swift`
   — `public let hmacSecret: EncString?` with doc:
@@ -273,22 +329,45 @@ The CXF and passkey/FIDO2 stacks intersect in two places:
    `.passkey` iff `login?.fido2Credentials?.isEmpty == false`. This is purely a
    UI-summary distinction; the actual FIDO2 credential data round-trips through the
    SDK's CXF (de)serialization, not through Apple's `ASPasskey*` types.
-2. **`ASImportableCredential.passkey`** — when dumping an imported account for
-   tests/snapshots (`ASImportableAccount+Extensions.dump`), the `.passkey` case
-   surfaces `credentialID`, `key`, `relyingPartyIdentifier`, `userDisplayName`,
-   `userName`. There is **no** `fido2Extensions` / PRF / hmac-secret field on the
-   Apple `ASImportableCredential.passkey` variant in the code the app touches —
-   those extension values are not currently preserved through the CXF
-   import/export path. Any extension preservation would need to happen at the SDK
-   (Rust) layer inside `exportCxf`/`importCxf`, which is out of scope for the iOS
-   sources reviewed here.
+2. **`ASImportableCredential.passkey`** — on iOS 26.4+, Apple's decoded passkey
+   carries optional `fido2Extensions.hmacCredentials`. The existing iOS import
+   repository encodes the `ASImportableAccount` with `JSONEncoder.cxfEncoder`, so
+   the Apple fields reach the serialized CXF payload handed to
+   `clientService.exporters().importCxf(payload:)`. The shared SDK must then
+   validate and preserve them; that production path remains issue #27 and is not
+   implemented by the issue #28 fixtures.
+
+The same distinction applies in reverse: Apple's types can represent the data,
+but the SDK exporter must emit it before the iOS export repository can decode it.
+General export is parked until after the first device proof.
 
 ---
 
-## 7. Open work / TODOs
+## 7. Negative cases and secret-safe diagnostics
+
+The iOS fixture surface freezes these transport inputs:
+
+| Case | Apple type behavior | Downstream requirement |
+|---|---|---|
+| Valid | Decodes one passkey with `.sha256` and two 32-byte seeds | Preserve both seeds exactly. |
+| Missing PRF | Decodes with `fido2Extensions == nil` | Authentication may remain possible; PRF-required wallet recovery must fail closed. |
+| Malformed seed | Decodes a 31-byte `credentialWithUV` buffer | Import validation must reject it before persistence. |
+| Duplicate | Decodes two passkeys with the same credential ID | Import policy must detect the duplicate without logging the ID. |
+| Unsupported key | Decodes a valid Ed25519 PKCS#8 key as opaque `Data` | The ES256 MVP must reject it instead of relabeling it. |
+
+Test matchers may report field names, presence, byte lengths, and a generic
+match/mismatch result. They must never interpolate a private PKCS#8 key, UV or
+non-UV HMAC seed, evaluated PRF output, or a real credential payload. The shared
+`ASImportableAccount.dump()` helper therefore prints only redaction markers and
+lengths for passkey private keys and HMAC credentials.
+
+---
+
+## 8. Open work / TODOs
 
 | Ticket | Location | Status |
 |--------|----------|--------|
+| #27 | CXF import repository / SDK handoff | Validate and preserve iOS 26.4 FIDO2 extension state in production. |
 | PM-26177 | `DeviceAuthKeyService.createDeviceAuthKey` / `assertDeviceAuthKey` | Stub throws `.notImplemented`. |
 | PM-26177 | `ASPasskeyAssertionCredential(...).init` `extensionOutput: nil` | PRF output not forwarded to Apple on assertion. |
 | PM-26177 | `GetAssertionRequest.init(...)` `extensions: nil` | PRF client inputs not forwarded from Apple request to SDK. |
@@ -301,7 +380,7 @@ bridging path intentionally drops extension input/output at the boundaries.
 
 ---
 
-## 8. Key file index (absolute paths)
+## 9. Key file index (absolute paths)
 
 CXF:
 - `/Users/eminmahrt/Developer/nuri-bitwarden/ios/Bitwarden/Application/SceneDelegate.swift`
@@ -322,6 +401,8 @@ CXF:
 - `/Users/eminmahrt/Developer/nuri-bitwarden/ios/BitwardenShared/Core/Vault/Services/Fixtures/cxfTwoBasicAuthCiphers.json`
 - `/Users/eminmahrt/Developer/nuri-bitwarden/ios/BitwardenShared/Core/Vault/Services/TestHelpers/ASImportableItem+Extensions.swift`
 - `/Users/eminmahrt/Developer/nuri-bitwarden/ios/BitwardenShared/Core/Vault/Services/TestHelpers/ASImportableAccount+Extensions.swift`
+- `/Users/eminmahrt/Developer/nuri-bitwarden/ios/BitwardenShared/Core/Vault/Services/TestHelpers/CXFPasskeyPRF+Fixtures.swift`
+- `/Users/eminmahrt/Developer/nuri-bitwarden/ios/BitwardenShared/Core/Vault/Services/CXFPasskeyPRFFixturesTests.swift`
 - `/Users/eminmahrt/Developer/nuri-bitwarden/ios/BitwardenKit/Core/Platform/Services/API/Extensions/JSONEncoder+Bitwarden.swift`
 - `/Users/eminmahrt/Developer/nuri-bitwarden/ios/BitwardenKit/Core/Platform/Services/API/Extensions/JSONDecoder+Bitwarden.swift`
 
