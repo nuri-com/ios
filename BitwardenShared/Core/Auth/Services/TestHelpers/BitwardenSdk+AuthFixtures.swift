@@ -45,7 +45,7 @@ extension BitwardenSdk.ClientExtensionResults {
     static func fixture(
         credProps: BitwardenSdk.CredPropsResult? = nil,
     ) -> BitwardenSdk.ClientExtensionResults {
-        .init(credProps: credProps)
+        .init(credProps: credProps, prf: nil)
     }
 }
 
