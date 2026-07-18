@@ -1,5 +1,6 @@
 import AuthenticationServices
 import BitwardenKit
+import BitwardenSdk
 import BitwardenSdkMocks
 import TestHelpers
 import XCTest
@@ -109,7 +110,7 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
     }
 
     /// `importCiphers(credentialImportToken:onProgress:)` passes the complete AuthenticationServices
-    /// passkey to the SDK and keeps the SDK cipher's opaque extension state through the API boundary.
+    /// passkey to the SDK and submits it through the official opaque cipher data boundary.
     @MainActor
     func test_importCiphers_passkeyPRFPreservedAcrossSDKBoundary() async throws {
         guard #available(iOS 26.4, *) else {
@@ -132,6 +133,19 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
             type: .login,
         )
         clientService.mockExporters.importCxfReturnValue = [sdkCipher]
+        let opaqueCipherData = "2.c3ludGhldGljLWJsb2I="
+        clientService.mockVault.clientCiphers.encryptClosure = { _ in
+            EncryptionContext(
+                encryptedFor: "synthetic-user-id",
+                cipher: .fixture(
+                    data: opaqueCipherData,
+                    id: "synthetic-passkey-cipher",
+                    login: nil,
+                    name: nil,
+                    type: .login,
+                ),
+            )
+        }
         cxfCredentialsResultBuilder.buildResult = [CXFCredentialsResult(count: 1, type: .passkey)]
 
         _ = try await subject.importCiphers(
@@ -150,16 +164,55 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
             "AuthenticationServices to SDK passkey mismatch; credential material redacted",
         )
 
+        XCTAssertEqual(clientService.mockVault.clientCiphers.decryptReceivedCipher, sdkCipher)
+        XCTAssertEqual(
+            clientService.mockVault.clientCiphers.encryptReceivedCipherView?
+                .login?.fido2Credentials?.first?.extensionState,
+            opaqueExtensionState,
+            "SDK decrypt/encrypt boundary omitted extension state; value redacted",
+        )
+
         let importedCipher = try XCTUnwrap(importCiphersService.importCiphersCiphers?.first)
-        XCTAssertTrue(
-            importedCipher == sdkCipher,
-            "SDK cipher changed before import API submission; encrypted credential material redacted",
-        )
+        // Composite encryption emits a true blob cipher without legacy fields. The repository
+        // retains only the encrypted source name required by the official import endpoint.
+        XCTAssertEqual(importedCipher.name, sdkCipher.name)
         let requestModel = CipherRequestModel(cipher: importedCipher)
-        XCTAssertTrue(
-            requestModel.login?.fido2Credentials?.first?.extensionState == opaqueExtensionState,
-            "Opaque FIDO2 extension state was not preserved; value redacted",
-        )
+        XCTAssertEqual(requestModel.data, opaqueCipherData)
+        XCTAssertNil(requestModel.login, "Portable passkey must not be sent in legacy login fields")
+    }
+
+    /// `importCiphers(credentialImportToken:onProgress:)` fails closed when the active account
+    /// cannot produce an opaque cipher data blob for a portable passkey.
+    @MainActor
+    func test_importCiphers_passkeyPRFRequiresBlobCapableAccount() async throws {
+        guard #available(iOS 26.4, *) else {
+            throw XCTSkip("PRF-capable CXF passkeys require iOS 26.4")
+        }
+
+        let credentialImportManager = MockCredentialImportManager()
+        credentialImportManager.importCredentialsResult = try .success(getASExportedCredentialDataAsJson(
+            accounts: [CXFPasskeyPRFFixtures.account(for: .valid)],
+        ))
+        credentialManagerFactory.importManager = credentialImportManager
+
+        clientService.mockExporters.importCxfReturnValue = [
+            .fixture(
+                login: .fixture(
+                    fido2Credentials: [.fixture(extensionState: "opaque-extension-state")],
+                ),
+                type: .login,
+            ),
+        ]
+
+        await assertAsyncThrows(error: ImportCiphersRepositoryError.blobCapableAccountRequired) {
+            _ = try await self.subject.importCiphers(
+                credentialImportToken: UUID(uuidString: "e8f3b381-aac2-4379-87fe-14fac61079ec")!,
+                onProgress: { _ in },
+            )
+        }
+
+        XCTAssertFalse(importCiphersService.importCiphersCalled)
+        XCTAssertFalse(syncService.didFetchSync)
     }
 
     /// `importCiphers(credentialImportToken:progressDelegate:)` throws `noDataFound`

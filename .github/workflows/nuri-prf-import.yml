@@ -9,11 +9,15 @@ on:
       - "BitwardenKit/Core/Vault/Services/Mocks/BitwardenSdk+VaultMocking.swift"
       - "BitwardenShared/Core/Tools/Repositories/ImportCiphersRepository*"
       - "BitwardenShared/Core/Tools/Repositories/ImportCiphersSDKBoundaryTests.swift"
+      - "BitwardenShared/Core/Tools/Services/API/Requests/ImportCiphersRequest*"
       - "BitwardenShared/Core/Vault/Extensions/BitwardenSdk+Vault.swift"
       - "BitwardenShared/Core/Vault/Extensions/BitwardenSdkVaultTests.swift"
       - "BitwardenShared/Core/Vault/Models/API/CipherLoginFido2Credential.swift"
+      - "BitwardenShared/Core/Vault/Models/Request/CipherRequestModel.swift"
+      - "BitwardenShared/Core/Vault/Models/Response/CipherDetailsResponseModel.swift"
       - "BitwardenShared/Core/Vault/Services/API/Fixtures/syncWithCipher.json"
       - "BitwardenShared/Core/Vault/Services/API/Sync/SyncAPIServiceTests.swift"
+      - "BitwardenShared/Core/Vault/Services/CipherService*"
       - "BitwardenShared/Core/Vault/Services/SyncServiceTests.swift"
       - "BitwardenShared/Core/Vault/Services/TestHelpers/CXFPasskeyPRF+Fixtures.swift"
       - "BitwardenShared/UI/Tools/ImportCXF/ImportCXF/ImportCXFProcessor*"
@@ -74,8 +78,11 @@ jobs:
             -only-testing:BitwardenSharedTests/CXFPasskeyPRFFixturesTests \
             -only-testing:BitwardenSharedTests/ImportCiphersSDKBoundaryTests \
             -only-testing:BitwardenSharedTests/ImportCiphersRepositoryTests \
+            -only-testing:BitwardenSharedTests/ImportCiphersRequestTests \
             -only-testing:BitwardenSharedTests/ImportCXFProcessorTests \
+            -only-testing:BitwardenSharedTests/BitwardenSdkVaultCipherDetailsResponseModelTests \
             -only-testing:BitwardenSharedTests/BitwardenSdkVaultFido2CredentialTests \
+            -only-testing:BitwardenSharedTests/CipherServiceTests/test_replaceCiphers \
             -only-testing:BitwardenSharedTests/SyncAPIServiceTests/test_sync_withCiphers \
             -only-testing:BitwardenSharedTests/SyncServiceTests/test_fetchSync_ciphers \
             CODE_SIGNING_ALLOWED=NO \

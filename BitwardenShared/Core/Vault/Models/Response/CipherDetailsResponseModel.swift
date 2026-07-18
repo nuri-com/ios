@@ -25,6 +25,9 @@ struct CipherDetailsResponseModel: JSONResponse, Equatable {
     /// The date the cipher was created.
     let creationDate: Date
 
+    /// Opaque composite-encrypted cipher data.
+    let data: String?
+
     /// The date the cipher was deleted.
     let deletedDate: Date?
 
@@ -56,7 +59,7 @@ struct CipherDetailsResponseModel: JSONResponse, Equatable {
     let login: CipherLoginModel?
 
     /// The name of the cipher.
-    let name: String
+    let name: String?
 
     /// Notes containing within the cipher.
     let notes: String?

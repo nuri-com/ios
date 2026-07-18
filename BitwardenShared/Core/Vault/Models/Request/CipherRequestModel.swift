@@ -25,6 +25,9 @@ struct CipherRequestModel: JSONRequestBody {
     /// Driver's license data if the cipher is a driver's license.
     let driversLicense: CipherDriversLicenseModel?
 
+    /// Opaque composite-encrypted cipher data.
+    let data: String?
+
     /// The ID of the user that encrypted the cipher. It should always represent a UserId.
     /// This is used to check that the user who encrypted the cipher is the same making the request.
     let encryptedFor: String?
@@ -102,6 +105,7 @@ extension CipherRequestModel {
             bankAccount: cipher.bankAccount.map(CipherBankAccountModel.init),
             card: cipher.card.map(CipherCardModel.init),
             driversLicense: cipher.driversLicense.map(CipherDriversLicenseModel.init),
+            data: cipher.data,
             encryptedFor: encryptedFor,
             favorite: cipher.favorite,
             fields: cipher.fields?.map(CipherFieldModel.init),

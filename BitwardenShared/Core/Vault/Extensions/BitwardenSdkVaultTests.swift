@@ -52,6 +52,45 @@ class BitwardenSdkVaultCipherTests: BitwardenTestCase {
 class BitwardenSdkVaultCipherDetailsResponseModelTests: BitwardenTestCase {
     // MARK: Tests
 
+    /// Composite cipher responses preserve their opaque data without requiring legacy fields.
+    func test_compositeCipherResponseRoundTrip() throws {
+        let opaqueCipherData = "2.c3ludGhldGljLWJsb2I="
+        let json = Data(
+            """
+            {
+              "collectionIds": [],
+              "creationDate": "2026-07-18T10:00:00Z",
+              "data": "\(opaqueCipherData)",
+              "edit": true,
+              "favorite": false,
+              "id": "synthetic-composite-cipher",
+              "name": null,
+              "organizationUseTotp": false,
+              "reprompt": 0,
+              "revisionDate": "2026-07-18T10:00:00Z",
+              "type": 1,
+              "viewPassword": true
+            }
+            """.utf8,
+        )
+
+        let responseModel = try CipherDetailsResponseModel.decoder.decode(
+            CipherDetailsResponseModel.self,
+            from: json,
+        )
+        XCTAssertNil(responseModel.name)
+        XCTAssertEqual(responseModel.data, opaqueCipherData)
+
+        let cipher = Cipher(responseModel: responseModel)
+        XCTAssertNil(cipher.name)
+        XCTAssertNil(cipher.login)
+        XCTAssertEqual(cipher.data, opaqueCipherData)
+
+        let roundTrippedResponse = try CipherDetailsResponseModel(cipher: cipher)
+        XCTAssertNil(roundTrippedResponse.name)
+        XCTAssertEqual(roundTrippedResponse.data, opaqueCipherData)
+    }
+
     /// `init(cipher:)` Inits a cipher details response model from an SDK cipher without id throws.
     func test_init_fromSdkNoIdThrows() throws {
         let cipher = Cipher.fixture(
