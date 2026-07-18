@@ -121,9 +121,9 @@
     {
       "identity" : "sdk-swift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/bitwarden/sdk-swift",
+      "location" : "https://github.com/nuri-com/sdk-swift",
       "state" : {
-        "revision" : "4d4159107871cd1a598403676912d8ff16a8dd98"
+        "revision" : "729a39aaf585782f11d19c3c650b3356ed0f52be"
       }
     },
     {

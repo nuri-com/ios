@@ -117,6 +117,21 @@ enum CXFPasskeyPRFFixtures {
     }
 }
 
+/// Public, deterministic BlobV1 container from sdk-internal@ac6eb96's compatibility test.
+/// It contains no real account or credential material.
+enum CipherBlobV1Fixtures {
+    static let recordedSDKBlob = [
+        "{\"format_version\":1,\"wrapped_cek\":\"",
+        "2.LQJf2BbznXX+NelBY4pSJg==|txMmjZEOhSMA7Jrm+rZt1LDfA6s3G2QU5Z8MqO4nG9s2ZXuzSLU/",
+        "iYOUXD8xw+eHVSu7IUHu1LsCm4SLf+ZhkX5QIo4hJT3DHSbgu6VPUC0=|yuU/EWQWyihf2Yh9lQ1NP+zTROEpnXoR",
+        "S//GfxDgC4k=\",\"envelope\":\"",
+        "g1hLpQE6AAERbwN4I2FwcGxpY2F0aW9uL3guYml0d2FyZGVuLmNib3ItcGFkZGVkBFBoHnjLne8MPV72YPXuskd6",
+        "OgABOIECOgABOIABoQVYGA00vxb7gF7Y3SUyoCMy34C1HrB3fSY3jVhxZXQmmotGEIwwRlG+SpTcyTl5m4lUnozWr",
+        "jAYfWitl1+cz457Wq3iDW/MvrHE7c1g38QJxY6t1yhQL0dQy9DyDXQDiWGPtYzic2Ay+GtrlIERN37wOdhQ1HZDeo",
+        "obHL+aKomvPTems/Ta2SqWC9HfE38=\"}",
+    ].joined()
+}
+
 /// Matchers for imported passkey fixtures that never interpolate secret bytes into failures.
 @available(iOS 26.4, *)
 enum CXFPasskeyPRFMatcher {

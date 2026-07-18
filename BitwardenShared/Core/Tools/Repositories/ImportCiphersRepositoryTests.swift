@@ -1,5 +1,6 @@
 import AuthenticationServices
 import BitwardenKit
+import BitwardenSdk
 import BitwardenSdkMocks
 import TestHelpers
 import XCTest
@@ -108,6 +109,121 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
         XCTAssertEqual(result, expectedResults)
     }
 
+    /// `importCiphers(credentialImportToken:onProgress:)` passes the complete AuthenticationServices
+    /// passkey to the SDK and submits it through the official opaque cipher data boundary.
+    @MainActor
+    func test_importCiphers_passkeyPRFPreservedAcrossSDKBoundary() async throws {
+        guard #available(iOS 26.4, *) else {
+            throw XCTSkip("PRF-capable CXF passkeys require iOS 26.4")
+        }
+
+        let credentialImportManager = MockCredentialImportManager()
+        credentialImportManager.importCredentialsResult = try .success(getASExportedCredentialDataAsJson(
+            accounts: [CXFPasskeyPRFFixtures.account(for: .valid)],
+        ))
+        credentialManagerFactory.importManager = credentialImportManager
+
+        let opaqueExtensionState =
+            "2.c3ludGhldGljLWl2|c3ludGhldGljLWNpcGhlcnRleHQ=|c3ludGhldGljLW1hYw=="
+        let sdkCipher = Cipher.fixture(
+            id: "synthetic-passkey-cipher",
+            login: .fixture(
+                fido2Credentials: [.fixture(extensionState: opaqueExtensionState)],
+            ),
+            type: .login,
+        )
+        clientService.mockExporters.importCxfReturnValue = [sdkCipher]
+        let opaqueCipherData = CipherBlobV1Fixtures.recordedSDKBlob
+        clientService.mockVault.clientCiphers.encryptClosure = { _ in
+            EncryptionContext(
+                encryptedFor: "synthetic-user-id",
+                cipher: .fixture(
+                    data: opaqueCipherData,
+                    id: "synthetic-passkey-cipher",
+                    login: nil,
+                    name: nil,
+                    type: .login,
+                ),
+            )
+        }
+        cxfCredentialsResultBuilder.buildResult = [CXFCredentialsResult(count: 1, type: .passkey)]
+
+        _ = try await subject.importCiphers(
+            credentialImportToken: UUID(uuidString: "e8f3b381-aac2-4379-87fe-14fac61079ec")!,
+            onProgress: { _ in },
+        )
+
+        let sdkPayload = try XCTUnwrap(clientService.mockExporters.importCxfReceivedPayload)
+        let sdkAccount = try JSONDecoder.cxfDecoder.decode(
+            ASImportableAccount.self,
+            from: Data(sdkPayload.utf8),
+        )
+        let sdkPasskey = try XCTUnwrap(passkeys(in: sdkAccount).first)
+        XCTAssertTrue(
+            CXFPasskeyPRFMatcher.passkeyMatches(sdkPasskey, CXFPasskeyPRFFixtures.validPasskey),
+            "AuthenticationServices to SDK passkey mismatch; credential material redacted",
+        )
+
+        XCTAssertEqual(clientService.mockVault.clientCiphers.decryptReceivedCipher, sdkCipher)
+        XCTAssertEqual(
+            clientService.mockVault.clientCiphers.encryptReceivedCipherView?
+                .login?.fido2Credentials?.first?.extensionState,
+            opaqueExtensionState,
+            "SDK decrypt/encrypt boundary omitted extension state; value redacted",
+        )
+
+        let importedCipher = try XCTUnwrap(importCiphersService.importCiphersCiphers?.first)
+        // Composite encryption emits a true blob cipher without legacy fields. The repository
+        // retains only the encrypted source name required by the official import endpoint.
+        XCTAssertEqual(importedCipher.name, sdkCipher.name)
+        let requestModel = CipherRequestModel(cipher: importedCipher)
+        XCTAssertEqual(requestModel.data, opaqueCipherData)
+        XCTAssertNil(requestModel.login, "Portable passkey must not be sent in legacy login fields")
+    }
+
+    /// `importCiphers(credentialImportToken:onProgress:)` fails closed when the active account
+    /// cannot produce an opaque cipher data blob for a portable passkey.
+    @MainActor
+    func test_importCiphers_passkeyPRFRequiresBlobCapableAccount() async throws {
+        guard #available(iOS 26.4, *) else {
+            throw XCTSkip("PRF-capable CXF passkeys require iOS 26.4")
+        }
+
+        let credentialImportManager = MockCredentialImportManager()
+        credentialImportManager.importCredentialsResult = try .success(getASExportedCredentialDataAsJson(
+            accounts: [CXFPasskeyPRFFixtures.account(for: .valid)],
+        ))
+        credentialManagerFactory.importManager = credentialImportManager
+
+        clientService.mockExporters.importCxfReturnValue = [
+            .fixture(
+                login: .fixture(
+                    fido2Credentials: [.fixture(extensionState: "opaque-extension-state")],
+                ),
+                type: .login,
+            ),
+        ]
+
+        for opaqueCipherData in [nil, ""] as [String?] {
+            clientService.mockVault.clientCiphers.encryptClosure = { _ in
+                EncryptionContext(
+                    encryptedFor: "synthetic-user-id",
+                    cipher: .fixture(data: opaqueCipherData),
+                )
+            }
+
+            await assertAsyncThrows(error: ImportCiphersRepositoryError.blobCapableAccountRequired) {
+                _ = try await self.subject.importCiphers(
+                    credentialImportToken: UUID(uuidString: "e8f3b381-aac2-4379-87fe-14fac61079ec")!,
+                    onProgress: { _ in },
+                )
+            }
+        }
+
+        XCTAssertFalse(importCiphersService.importCiphersCalled)
+        XCTAssertFalse(syncService.didFetchSync)
+    }
+
     /// `importCiphers(credentialImportToken:progressDelegate:)` throws `noDataFound`
     /// when there are no accounts after importing credentials.
     @MainActor
@@ -152,7 +268,7 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
 
         clientService.mockExporters.importCxfThrowableError = BitwardenTestError.example
 
-        await assertAsyncThrows(error: BitwardenTestError.example) {
+        await assertAsyncThrows(error: ImportCiphersRepositoryError.sdkImportFailed) {
             _ = try await subject.importCiphers(
                 credentialImportToken: UUID(
                     uuidString: "e8f3b381-aac2-4379-87fe-14fac61079ec",
@@ -250,5 +366,13 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
             throw BitwardenError.dataError("Failed to encode ASExportedCredentialData")
         }
         return credentialDataJsonString
+    }
+
+    @available(iOS 26.4, *)
+    private func passkeys(in account: ASImportableAccount) -> [ASImportableCredential.Passkey] {
+        account.items.flatMap(\.credentials).compactMap { credential in
+            guard case let .passkey(passkey) = credential else { return nil }
+            return passkey
+        }
     }
 }

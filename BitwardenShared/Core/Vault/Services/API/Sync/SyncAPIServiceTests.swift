@@ -52,6 +52,7 @@ class SyncAPIServiceTests: BitwardenTestCase {
                                     creationDate: Date(timeIntervalSince1970: 1_710_523_862.244),
                                     credentialId: "encrypted credentialId",
                                     discoverable: "encrypted discoverable",
+                                    extensionState: "encrypted extensionState",
                                     keyAlgorithm: "encrypted keyAlgorithm",
                                     keyCurve: "encrypted keyCurve",
                                     keyType: "encrypted keyType",

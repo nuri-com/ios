@@ -19,6 +19,9 @@ struct CipherLoginFido2Credential: Codable, Equatable {
     /// Whether the FIDO2 credential is discoverable.
     let discoverable: String
 
+    /// Optional opaque encrypted FIDO2 extension state used by portable passkeys.
+    let extensionState: String?
+
     /// The public key algorithm of the credential.
     let keyAlgorithm: String
 

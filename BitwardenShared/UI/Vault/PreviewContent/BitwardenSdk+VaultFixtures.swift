@@ -33,6 +33,7 @@ extension Cipher {
         card: Card? = nil,
         collectionIds: [String] = [],
         creationDate: DateTime = Date(year: 2023, month: 11, day: 5, hour: 9, minute: 41),
+        data: String? = nil,
         deletedDate: Date? = nil,
         driversLicense: DriversLicense? = nil,
         edit: Bool = true,
@@ -44,7 +45,7 @@ extension Cipher {
         key: String? = nil,
         localData: LocalData? = nil,
         login: BitwardenSdk.Login? = nil,
-        name: String = "Bitwarden",
+        name: String? = "Bitwarden",
         notes: String? = nil,
         organizationId: String? = nil,
         organizationUseTotp: Bool = false,
@@ -89,7 +90,7 @@ extension Cipher {
             deletedDate: deletedDate,
             revisionDate: revisionDate,
             archivedDate: archivedDate,
-            data: nil,
+            data: data,
         )
     }
 }
@@ -677,6 +678,7 @@ extension Fido2Credential {
         creationDate: Date = Date(year: 2024, month: 3, day: 15, hour: 9, minute: 15),
         credentialId: String = "",
         discoverable: String = "",
+        extensionState: String? = nil,
         keyAlgorithm: String = "",
         keyCurve: String = "",
         keyType: String = "",
@@ -701,6 +703,7 @@ extension Fido2Credential {
             userDisplayName: userDisplayName,
             discoverable: discoverable,
             creationDate: creationDate,
+            extensionState: extensionState,
         )
     }
 }
@@ -751,6 +754,7 @@ extension Fido2CredentialView {
         creationDate: Date = Date(year: 2024, month: 3, day: 15, hour: 9, minute: 15),
         credentialId: String = "",
         discoverable: String = "",
+        extensionState: String? = nil,
         keyAlgorithm: String = "",
         keyCurve: String = "",
         keyType: String = "",
@@ -775,6 +779,7 @@ extension Fido2CredentialView {
             userDisplayName: userDisplayName,
             discoverable: discoverable,
             creationDate: creationDate,
+            extensionState: extensionState,
         )
     }
 }

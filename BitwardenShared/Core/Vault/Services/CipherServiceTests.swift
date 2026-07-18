@@ -247,15 +247,27 @@ class CipherServiceTests: BitwardenTestCase { // swiftlint:disable:this type_bod
 
     /// `replaceCiphers(_:userId:)` replaces the persisted ciphers in the data store.
     func test_replaceCiphers() async throws {
+        let opaqueCipherData = CipherBlobV1Fixtures.recordedSDKBlob
         let ciphers: [CipherDetailsResponseModel] = [
             CipherDetailsResponseModel.fixture(id: "1", name: "Cipher 1"),
             CipherDetailsResponseModel.fixture(id: "2", name: "Cipher 2"),
+            CipherDetailsResponseModel.fixture(
+                data: opaqueCipherData,
+                id: "3",
+                login: nil,
+                name: nil,
+                type: .login,
+            ),
         ]
 
         try await subject.replaceCiphers(ciphers, userId: "1")
 
         XCTAssertEqual(cipherDataStore.replaceCiphersValue, ciphers.map(Cipher.init))
         XCTAssertEqual(cipherDataStore.replaceCiphersUserId, "1")
+        let persistedBlob = try XCTUnwrap(cipherDataStore.replaceCiphersValue?.last)
+        XCTAssertEqual(persistedBlob.data, opaqueCipherData)
+        XCTAssertNil(persistedBlob.login)
+        XCTAssertNil(persistedBlob.name)
     }
 
     /// `restoreCipherWithServer(id:_:)` restores the cipher in the backend and local storage.

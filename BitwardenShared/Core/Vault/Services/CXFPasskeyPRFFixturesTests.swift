@@ -7,6 +7,20 @@ import XCTest
 
 @available(iOS 26.4, *)
 final class CXFPasskeyPRFFixturesTests: BitwardenTestCase {
+    func test_recordedSDKBlob_hasOfficialBlobV1Shape() throws {
+        let blob = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(CipherBlobV1Fixtures.recordedSDKBlob.utf8),
+            ) as? [String: Any],
+        )
+
+        XCTAssertEqual(Set(blob.keys), ["format_version", "wrapped_cek", "envelope"])
+        XCTAssertEqual(blob["format_version"] as? Int, 1)
+        XCTAssertFalse(try XCTUnwrap(blob["wrapped_cek"] as? String).isEmpty)
+        let envelope = try XCTUnwrap(blob["envelope"] as? String)
+        XCTAssertNotNil(Data(base64Encoded: envelope))
+    }
+
     func test_validFixture_decodesThroughAuthenticationServices() throws {
         let (account, passkeys) = try decode(.valid)
         let passkey = try XCTUnwrap(passkeys.first)

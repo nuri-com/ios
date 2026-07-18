@@ -122,6 +122,7 @@ extension CipherDetailsResponseModel {
             card: cipher.card.map(CipherCardModel.init),
             collectionIds: cipher.collectionIds,
             creationDate: cipher.creationDate,
+            data: cipher.data,
             deletedDate: cipher.deletedDate,
             driversLicense: cipher.driversLicense.map(CipherDriversLicenseModel.init),
             edit: cipher.edit,
@@ -132,7 +133,7 @@ extension CipherDetailsResponseModel {
             identity: cipher.identity.map(CipherIdentityModel.init),
             key: cipher.key,
             login: cipher.login.map(CipherLoginModel.init),
-            name: cipher.name ?? "",
+            name: cipher.name,
             notes: cipher.notes,
             organizationId: cipher.organizationId,
             organizationUseTotp: cipher.organizationUseTotp,
@@ -192,6 +193,7 @@ extension CipherLoginFido2Credential {
             creationDate: credential.creationDate,
             credentialId: credential.credentialId,
             discoverable: credential.discoverable,
+            extensionState: credential.extensionState,
             keyAlgorithm: credential.keyAlgorithm,
             keyCurve: credential.keyCurve,
             keyType: credential.keyType,
@@ -267,9 +269,9 @@ extension CipherSecureNoteModel {
 extension CipherSSHKeyModel {
     init(sshKey: BitwardenSdk.SshKey) {
         self.init(
-            keyFingerprint: sshKey.fingerprint,
+            keyFingerprint: sshKey.fingerprint ?? "",
             privateKey: sshKey.privateKey,
-            publicKey: sshKey.publicKey,
+            publicKey: sshKey.publicKey ?? "",
         )
     }
 }
@@ -484,7 +486,7 @@ extension BitwardenSdk.Cipher {
             deletedDate: model.deletedDate,
             revisionDate: model.revisionDate,
             archivedDate: model.archivedDate,
-            data: nil,
+            data: model.data,
         )
     }
 
@@ -540,6 +542,12 @@ extension BitwardenSdk.Cipher {
 extension BitwardenSdk.CipherListView: @retroactive Identifiable, Fido2UserVerifiableCipherView {}
 
 extension BitwardenSdk.CipherListViewType {
+    /// Whether the type is a bank account.
+    var isBankAccount: Bool {
+        guard case .bankAccount = self else { return false }
+        return true
+    }
+
     /// Whether the type is card.
     var isCard: Bool {
         switch self {
@@ -680,6 +688,7 @@ extension BitwardenSdk.Fido2Credential: @retroactive Identifiable, @unchecked @r
             userDisplayName: model.userDisplayName,
             discoverable: model.discoverable,
             creationDate: model.creationDate,
+            extensionState: model.extensionState,
         )
     }
 }

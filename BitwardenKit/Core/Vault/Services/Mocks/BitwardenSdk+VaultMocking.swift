@@ -89,7 +89,7 @@ public extension CipherListViewType {
     init(cipher: Cipher) {
         switch cipher.type {
         case .bankAccount:
-            self = .bankAccount
+            self = .bankAccount(.init(accountNumber: nil, accountType: nil))
         case .card:
             self = .card(.init(brand: nil))
         case .driversLicense:
@@ -227,6 +227,7 @@ public extension Fido2Credential {
             userDisplayName: fido2CredentialView.userDisplayName,
             discoverable: fido2CredentialView.discoverable,
             creationDate: fido2CredentialView.creationDate,
+            extensionState: fido2CredentialView.extensionState,
         )
     }
 }
@@ -247,6 +248,7 @@ public extension Fido2CredentialView {
             userDisplayName: fido2Credential.userDisplayName,
             discoverable: fido2Credential.discoverable,
             creationDate: fido2Credential.creationDate,
+            extensionState: fido2Credential.extensionState,
         )
     }
 }
@@ -544,8 +546,8 @@ public extension SshKeyView {
     init(sshKey: SshKey) {
         self.init(
             privateKey: sshKey.privateKey,
-            publicKey: sshKey.publicKey,
-            fingerprint: sshKey.fingerprint,
+            publicKey: sshKey.publicKey ?? "",
+            fingerprint: sshKey.fingerprint ?? "",
         )
     }
 }

@@ -88,7 +88,47 @@ extension DefaultImportCiphersRepository: ImportCiphersRepository {
             throw ImportCiphersRepositoryError.dataEncodingFailed
         }
 
-        let ciphers = try await clientService.exporters().importCxf(payload: accountJsonString)
+        let importedCiphers: [Cipher]
+        do {
+            importedCiphers = try await clientService.exporters().importCxf(payload: accountJsonString)
+        } catch {
+            // SDK import failures can originate while parsing plaintext credential material.
+            // Never forward the underlying error to telemetry because it may contain payload data.
+            throw ImportCiphersRepositoryError.sdkImportFailed
+        }
+
+        let ciphers: [Cipher]
+        do {
+            let ciphersClient = try await clientService.vault().ciphers()
+            var encryptedCiphers = [Cipher]()
+            encryptedCiphers.reserveCapacity(importedCiphers.count)
+
+            for importedCipher in importedCiphers {
+                let containsPortablePasskey = importedCipher.login?.fido2Credentials?.contains {
+                    $0.extensionState != nil
+                } == true
+                let cipherView = try await ciphersClient.decrypt(cipher: importedCipher)
+                let encryptionContext = try await ciphersClient.encrypt(cipherView: cipherView)
+
+                guard !containsPortablePasskey || encryptionContext.cipher.data?.isEmpty == false else {
+                    throw ImportCiphersRepositoryError.blobCapableAccountRequired
+                }
+
+                let encryptedCipher = encryptionContext.cipher.withLegacyNameFallback(importedCipher.name)
+                guard encryptedCipher.data == nil || encryptedCipher.name?.isEmpty == false else {
+                    // The official import endpoint still validates the obsolete name property,
+                    // even though it stores only the opaque data blob.
+                    throw ImportCiphersRepositoryError.sdkImportFailed
+                }
+                encryptedCiphers.append(encryptedCipher)
+            }
+            ciphers = encryptedCiphers
+        } catch let error as ImportCiphersRepositoryError {
+            throw error
+        } catch {
+            // SDK crypto errors may include decrypted cipher details. Keep telemetry redacted.
+            throw ImportCiphersRepositoryError.sdkImportFailed
+        }
 
         await onProgress(0.3)
 
@@ -103,7 +143,8 @@ extension DefaultImportCiphersRepository: ImportCiphersRepository {
 
         try await syncService.fetchSync(forceSync: true)
 
-        let importedCredentialsCount = cxfCredentialsResultBuilder.build(from: ciphers)
+        // Blob-encrypted ciphers intentionally omit legacy fields, so count the SDK import result.
+        let importedCredentialsCount = cxfCredentialsResultBuilder.build(from: importedCiphers)
 
         await onProgress(1.0)
 
@@ -116,4 +157,47 @@ extension DefaultImportCiphersRepository: ImportCiphersRepository {
 enum ImportCiphersRepositoryError: Error {
     case noDataFound
     case dataEncodingFailed
+    case sdkImportFailed
+    case blobCapableAccountRequired
+}
+
+private extension Cipher {
+    /// Retains an encrypted legacy name solely to satisfy the official import endpoint's request
+    /// validation. The server ignores this field whenever opaque composite `data` is present.
+    func withLegacyNameFallback(_ fallbackName: String?) -> Cipher {
+        guard name == nil, let fallbackName else { return self }
+        return Cipher(
+            id: id,
+            organizationId: organizationId,
+            folderId: folderId,
+            collectionIds: collectionIds,
+            key: key,
+            name: fallbackName,
+            notes: notes,
+            type: type,
+            login: login,
+            identity: identity,
+            card: card,
+            secureNote: secureNote,
+            sshKey: sshKey,
+            bankAccount: bankAccount,
+            driversLicense: driversLicense,
+            passport: passport,
+            favorite: favorite,
+            reprompt: reprompt,
+            organizationUseTotp: organizationUseTotp,
+            edit: edit,
+            permissions: permissions,
+            viewPassword: viewPassword,
+            localData: localData,
+            attachments: attachments,
+            fields: fields,
+            passwordHistory: passwordHistory,
+            creationDate: creationDate,
+            deletedDate: deletedDate,
+            revisionDate: revisionDate,
+            archivedDate: archivedDate,
+            data: data,
+        )
+    }
 }

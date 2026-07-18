@@ -52,6 +52,41 @@ class BitwardenSdkVaultCipherTests: BitwardenTestCase {
 class BitwardenSdkVaultCipherDetailsResponseModelTests: BitwardenTestCase {
     // MARK: Tests
 
+    /// Composite cipher responses preserve their opaque data without requiring legacy fields.
+    func test_compositeCipherResponseRoundTrip() throws {
+        let opaqueCipherData = CipherBlobV1Fixtures.recordedSDKBlob
+        let json = try JSONSerialization.data(withJSONObject: [
+            "collectionIds": [],
+            "creationDate": "2026-07-18T10:00:00Z",
+            "data": opaqueCipherData,
+            "edit": true,
+            "favorite": false,
+            "id": "4c862f31-0303-4d19-8bc8-0a7f5028400f",
+            "name": NSNull(),
+            "organizationUseTotp": false,
+            "reprompt": 0,
+            "revisionDate": "2026-07-18T10:00:00Z",
+            "type": 1,
+            "viewPassword": true,
+        ])
+
+        let responseModel = try CipherDetailsResponseModel.decoder.decode(
+            CipherDetailsResponseModel.self,
+            from: json,
+        )
+        XCTAssertNil(responseModel.name)
+        XCTAssertEqual(responseModel.data, opaqueCipherData)
+
+        let cipher = Cipher(responseModel: responseModel)
+        XCTAssertNil(cipher.name)
+        XCTAssertNil(cipher.login)
+        XCTAssertEqual(cipher.data, opaqueCipherData)
+
+        let roundTrippedResponse = try CipherDetailsResponseModel(cipher: cipher)
+        XCTAssertNil(roundTrippedResponse.name)
+        XCTAssertEqual(roundTrippedResponse.data, opaqueCipherData)
+    }
+
     /// `init(cipher:)` Inits a cipher details response model from an SDK cipher without id throws.
     func test_init_fromSdkNoIdThrows() throws {
         let cipher = Cipher.fixture(
@@ -79,6 +114,15 @@ class BitwardenSdkVaultCipherDetailsResponseModelTests: BitwardenTestCase {
 
 class BitwardenSdkCipherListViewTypeTests: BitwardenTestCase {
     // MARK: Tests
+
+    /// `isBankAccount` returns whether the type is a bank account.
+    func test_isBankAccount() {
+        let bankAccount = CipherListViewType.bankAccount(
+            .init(accountNumber: nil, accountType: nil),
+        )
+        XCTAssertTrue(bankAccount.isBankAccount)
+        XCTAssertFalse(CipherListViewType.identity.isBankAccount)
+    }
 
     /// `isLogin` returns whether the type is a login.
     func test_isLogin() {
@@ -338,6 +382,29 @@ class BitwardenSdkVaultCipherSSHKeyModelTests: BitwardenTestCase {
     }
 }
 
+// MARK: - Fido2Credential
+
+class BitwardenSdkVaultFido2CredentialTests: BitwardenTestCase {
+    /// SDK and API conversions keep encrypted extension state opaque and unchanged.
+    func test_extensionStateRoundTripAcrossSDKAndAPIModels() {
+        let opaqueExtensionState =
+            "2.c3ludGhldGljLWl2|c3ludGhldGljLWNpcGhlcnRleHQ=|c3ludGhldGljLW1hYw=="
+        let sdkCredential = Fido2Credential.fixture(extensionState: opaqueExtensionState)
+
+        let apiCredential = CipherLoginFido2Credential(fido2Credential: sdkCredential)
+        let roundTrippedCredential = Fido2Credential(cipherLoginFido2Credential: apiCredential)
+
+        XCTAssertTrue(
+            apiCredential.extensionState == opaqueExtensionState,
+            "SDK to API extension state mismatch; value redacted",
+        )
+        XCTAssertTrue(
+            roundTrippedCredential.extensionState == opaqueExtensionState,
+            "API to SDK extension state mismatch; value redacted",
+        )
+    }
+}
+
 // MARK: - CipherType
 
 class BitwardenSdkVaultCipherTypeTests: BitwardenTestCase {
@@ -362,7 +429,10 @@ class BitwardenSdkVaultCipherTypeTests: BitwardenTestCase {
         XCTAssertEqual(CipherType(CipherListViewType.identity), .identity)
         XCTAssertEqual(CipherType(CipherListViewType.secureNote), .secureNote)
         XCTAssertEqual(CipherType(CipherListViewType.sshKey), .sshKey)
-        XCTAssertEqual(CipherType(CipherListViewType.bankAccount), .bankAccount)
+        XCTAssertEqual(
+            CipherType(CipherListViewType.bankAccount(.init(accountNumber: nil, accountType: nil))),
+            .bankAccount,
+        )
         XCTAssertEqual(CipherType(CipherListViewType.driversLicense), .driversLicense)
         XCTAssertEqual(CipherType(CipherListViewType.passport), .passport)
     }
