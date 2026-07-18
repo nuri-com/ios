@@ -541,6 +541,12 @@ extension BitwardenSdk.Cipher {
 extension BitwardenSdk.CipherListView: @retroactive Identifiable, Fido2UserVerifiableCipherView {}
 
 extension BitwardenSdk.CipherListViewType {
+    /// Whether the type is a bank account.
+    var isBankAccount: Bool {
+        guard case .bankAccount = self else { return false }
+        return true
+    }
+
     /// Whether the type is card.
     var isCard: Bool {
         switch self {

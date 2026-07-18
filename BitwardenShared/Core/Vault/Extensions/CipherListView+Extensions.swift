@@ -41,7 +41,7 @@ extension CipherListView {
         case .archive:
             archivedDate != nil
         case .bankAccount:
-            type == .bankAccount
+            type.isBankAccount
         case .card:
             type.isCard
         case let .collection(id, _, _):
@@ -156,7 +156,7 @@ extension CipherListView {
         case .sshKey:
             .sshKey
         case .bankAccount:
-            .bankAccount
+            .bankAccount(.init(accountNumber: nil, accountType: nil))
         case .driversLicense:
             .driversLicense
         case .passport:
