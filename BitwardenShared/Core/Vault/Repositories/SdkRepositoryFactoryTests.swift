@@ -46,6 +46,7 @@ class SdkRepositoryFactoryTests: BitwardenTestCase {
         XCTAssertNil(repositories.folder)
         XCTAssertNil(repositories.userKeyState)
         XCTAssertNotNil(repositories.localUserDataKeyState)
+        XCTAssertNil(repositories.send)
     }
 
     /// `makeServerCommunicationConfigRepository()` makes a server communication config repository.

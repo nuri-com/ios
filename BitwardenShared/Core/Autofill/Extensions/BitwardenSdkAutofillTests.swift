@@ -133,6 +133,7 @@ class MakeCredentialRequestTests: BitwardenTestCase {
                     eval: PrfInputValues(
                         first: Data(repeating: 1, count: 32),
                         second: nil,
+                        alreadyHashed: false,
                     ),
                 ),
             ),
@@ -151,7 +152,7 @@ class MakeCredentialRequestTests: BitwardenTestCase {
             ExcludeList: [BitwardenSdk.PublicKeyCredentialDescriptor(ty: \"public-key\", id: 32 bytes, transports: Optional([\"transport\"]))]
             Options -> RK: true
             Options -> UV: preferred
-            Extensions: MakeCredentialExtensionsInput(prf: Optional(BitwardenSdk.MakeCredentialPrfInput(eval: Optional(BitwardenSdk.PrfInputValues(first: 32 bytes, second: nil)))))
+            Extensions: MakeCredentialExtensionsInput(prf: Optional(BitwardenSdk.MakeCredentialPrfInput(eval: Optional(BitwardenSdk.PrfInputValues(first: 32 bytes, second: nil, alreadyHashed: false)))))
             """
         // swiftlint:enable line_length
 
