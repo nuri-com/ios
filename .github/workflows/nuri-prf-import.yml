@@ -54,9 +54,10 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
-          toolchain: stable
+          toolchain: 1.96.0
 
       - name: Install Rust iOS targets
+        working-directory: sdk-internal
         run: |
           rustup target install aarch64-apple-ios-sim
           rustup target install aarch64-apple-ios
