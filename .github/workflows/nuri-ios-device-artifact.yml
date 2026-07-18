@@ -187,13 +187,36 @@ jobs:
             done
           ) > "$manifest"
 
-          COPYFILE_DISABLE=1 ditto -c -k --keepParent "$app" "$archive"
+          ditto --norsrc --noextattr --noqtn --noacl -c -k --keepParent "$app" "$archive"
           (
             cd "$output_dir"
             shasum -a 256 "$archive_name" > "$archive_name.sha256"
             shasum -a 256 -c "$archive_name.sha256"
           )
           unzip -tq "$archive"
+
+          verification_dir="$PWD/build/artifact-verification"
+          verification_manifest="$PWD/build/artifact-verification.files.sha256"
+          test "$verification_dir" = "$PWD/build/artifact-verification"
+          test "$verification_manifest" = "$PWD/build/artifact-verification.files.sha256"
+          rm -rf -- "$verification_dir"
+          rm -f -- "$verification_manifest"
+          mkdir -p "$verification_dir"
+          trap 'rm -rf -- "$verification_dir"; rm -f -- "$verification_manifest"' EXIT
+          unzip -q "$archive" -d "$verification_dir"
+          test -d "$verification_dir/Bitwarden.app"
+          test "$(find "$verification_dir" -mindepth 1 -maxdepth 1 -print | wc -l | tr -d ' ')" = "1"
+          (
+            cd "$verification_dir"
+            find . -type f -print | LC_ALL=C sort | while IFS= read -r file; do
+              normalized_file="${file#./}"
+              printf '%s  %s\n' "$(shasum -a 256 "$file" | awk '{print $1}')" "$normalized_file"
+            done
+          ) > "$verification_manifest"
+          if ! cmp -s "$manifest" "$verification_manifest"; then
+            echo "Extracted archive does not exactly match its per-file manifest" >&2
+            exit 1
+          fi
 
           archive_sha256="$(shasum -a 256 "$archive" | awk '{print $1}')"
           archive_bytes="$(wc -c < "$archive" | tr -d ' ')"
