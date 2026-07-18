@@ -25,7 +25,7 @@ class ImportCiphersRequestTests: BitwardenTestCase {
     /// `init(ciphers:folders:folderRelationships:)` sends composite ciphers only through the
     /// official opaque `data` property, without legacy login or extension fields.
     func test_init_compositeCipherUsesOpaqueData() throws {
-        let opaqueCipherData = "2.c3ludGhldGljLWJsb2I="
+        let opaqueCipherData = CipherBlobV1Fixtures.recordedSDKBlob
         let subject = try ImportCiphersRequest(
             ciphers: [.fixture(data: opaqueCipherData, login: nil, type: .login)],
         )

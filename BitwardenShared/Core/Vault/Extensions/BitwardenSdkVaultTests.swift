@@ -54,7 +54,7 @@ class BitwardenSdkVaultCipherDetailsResponseModelTests: BitwardenTestCase {
 
     /// Composite cipher responses preserve their opaque data without requiring legacy fields.
     func test_compositeCipherResponseRoundTrip() throws {
-        let opaqueCipherData = "2.c3ludGhldGljLWJsb2I="
+        let opaqueCipherData = CipherBlobV1Fixtures.recordedSDKBlob
         let json = Data(
             """
             {

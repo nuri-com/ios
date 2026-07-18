@@ -133,7 +133,7 @@ class ImportCiphersRepositoryTests: BitwardenTestCase {
             type: .login,
         )
         clientService.mockExporters.importCxfReturnValue = [sdkCipher]
-        let opaqueCipherData = "2.c3ludGhldGljLWJsb2I="
+        let opaqueCipherData = CipherBlobV1Fixtures.recordedSDKBlob
         clientService.mockVault.clientCiphers.encryptClosure = { _ in
             EncryptionContext(
                 encryptedFor: "synthetic-user-id",

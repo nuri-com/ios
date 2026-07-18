@@ -247,7 +247,7 @@ class CipherServiceTests: BitwardenTestCase { // swiftlint:disable:this type_bod
 
     /// `replaceCiphers(_:userId:)` replaces the persisted ciphers in the data store.
     func test_replaceCiphers() async throws {
-        let opaqueCipherData = "2.c3ludGhldGljLWJsb2I="
+        let opaqueCipherData = CipherBlobV1Fixtures.recordedSDKBlob
         let ciphers: [CipherDetailsResponseModel] = [
             CipherDetailsResponseModel.fixture(id: "1", name: "Cipher 1"),
             CipherDetailsResponseModel.fixture(id: "2", name: "Cipher 2"),
