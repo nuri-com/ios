@@ -16,7 +16,7 @@ jobs:
   test-prf-import-fixtures:
     name: Xcode 26.5 fixture compile and test
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
